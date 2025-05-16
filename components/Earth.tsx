@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Sphere, Box, Stars } from '@react-three/drei';
+import { OrbitControls, Sphere, Box, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import satelliteData from '../satellite1.json';
+import { cover } from 'three/src/extras/TextureUtils.js';
 
 // Import texture
 const earthTexture = '/textures/earth.jpg';
@@ -12,7 +13,7 @@ const earthTexture = '/textures/earth.jpg';
 // Global scale factor (1 unit = 1000 km)
 const SCALE = 1000;
 // Time scale for animation (higher = faster orbits)
-const TIME_SCALE = 1440;
+const TIME_SCALE = 144;
 
 // Original measurements in km
 const EARTH_RADIUS = 6378; // Earth radius in km
@@ -92,6 +93,7 @@ interface SatelliteProps {
 function Satellite({ data }: SatelliteProps) {
   const satelliteRef = useRef<THREE.Group>(null!);
   const time = useRef(0);
+  const [hovered, setHovered] = useState(false);
 
   // Orbital parameters
   const altitude = data.altitude;
@@ -123,29 +125,43 @@ function Satellite({ data }: SatelliteProps) {
     }
   });
 
-  // Compose the orbit plane rotation: RAAN (Z), inclination (X), argument of pericenter (Z)
-  const orbitRotation = [
-    0, // X
-    0, // Y
-    0  // Z
-  ];
-  // We'll use a group with .rotation.setFromRotationMatrix
+  // Compose the orbit plane rotation: RAAN (Y), inclination (X), argument of pericenter (Y)
   const orbitMatrix = new THREE.Matrix4();
-  orbitMatrix.makeRotationZ(raanRad)
+  orbitMatrix.makeRotationY(raanRad)
     .multiply(new THREE.Matrix4().makeRotationX(inclinationRad))
-    .multiply(new THREE.Matrix4().makeRotationZ(argPericenterRad));
+    .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
   const euler = new THREE.Euler().setFromRotationMatrix(orbitMatrix);
+
+  // Pointer event handlers
+  const handlePointerOver = (e: any) => {
+    e.stopPropagation();
+    setHovered(true);
+  };
+  const handlePointerOut = (e: any) => {
+    e.stopPropagation();
+    setHovered(false);
+  };
 
   return (
     <group rotation={[euler.x, euler.y, euler.z]}>
       <group ref={satelliteRef}>
         {/* Satellite body */}
-        <Box args={[SATELLITE_SIZE/SCALE, SATELLITE_SIZE/SCALE/2, SATELLITE_SIZE/SCALE/2]}>
+        <Box args={[SATELLITE_SIZE/SCALE, SATELLITE_SIZE/SCALE/2, SATELLITE_SIZE/SCALE/2]}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
           <meshBasicMaterial color="cyan" />
         </Box>
+        {/* Show label if hovered */}
+        {hovered && (
+          <Html center style={{ pointerEvents: 'none', color: 'white', background: 'rgba(0,0,0,0.7)', padding: '4px 8px', borderRadius: '4px', fontSize: '14px' }}>
+            {data.OBJECT_NAME}
+          </Html>
+        )}
         {/* Coverage area visualization */}
         <mesh position={[0, 0, 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[COVERAGE_RADIUS/SCALE, -(COVERAGE_RADIUS/(2*Math.tan(COVERAGE_ANGLE/2)))/SCALE, 32]} />
+          {/* <coneGeometry args={[COVERAGE_RADIUS/SCALE, -(COVERAGE_RADIUS/(2*Math.tan(COVERAGE_ANGLE/2)))/SCALE, 32]} /> */}
+          <coneGeometry args={[COVERAGE_RADIUS/SCALE, altitude/SCALE, 32]} />
           <meshBasicMaterial 
             color="cyan" 
             transparent 
@@ -155,6 +171,15 @@ function Satellite({ data }: SatelliteProps) {
         </mesh>
       </group>
     </group>
+  );
+}
+
+function OrbitRing({ radius }: { radius: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <torusGeometry args={[radius, 0.02, 16, 128]} />
+      <meshBasicMaterial color="red" />
+    </mesh>
   );
 }
 
@@ -183,6 +208,10 @@ function Globe() {
 }
 
 export default function Earth() {
+  // Use a typical altitude for the ring, or the first satellite's altitude if available
+  const ringAltitude = satelliteData[0]?.altitude || 780;
+  const ringRadius = (EARTH_RADIUS + ringAltitude) / SCALE;
+
   return (
     <div className="w-full h-full">
       <Canvas 
@@ -200,7 +229,8 @@ export default function Earth() {
           fade={false}
           speed={0.5}
         />
-        
+        {/* Red static ring for satellite orbit */}
+        <OrbitRing radius={ringRadius} />
         {/* Enhanced lighting for better texture visibility */}
         <ambientLight intensity={3} />
         <pointLight position={[10, 10, 10]} intensity={4} />
@@ -214,10 +244,12 @@ export default function Earth() {
         <Beacon orbitRadius={5000} speed={0.015} color="green" />
         <Beacon orbitRadius={3500} speed={0.025} color="yellow" size={0.15} />
         <Beacon orbitRadius={4500} speed={0.018} color="purple" size={0.25} />
-        
         {/* Satellites from data */}
-        {satelliteData.map((satellite) => (
-          <Satellite key={satellite.NORAD_CAT_ID} data={satellite} />
+        {satelliteData.map((satellite, idx) => (
+          <Satellite 
+            key={satellite.NORAD_CAT_ID} 
+            data={satellite}
+          />
         ))}
         <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
