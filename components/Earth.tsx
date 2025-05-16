@@ -12,7 +12,7 @@ const earthTexture = '/textures/earth.jpg';
 // Global scale factor (1 unit = 1000 km)
 const SCALE = 1000;
 // Time scale for animation (higher = faster orbits)
-const TIME_SCALE = 48;
+const TIME_SCALE = 1440;
 
 // Original measurements in km
 const EARTH_RADIUS = 6378; // Earth radius in km
@@ -85,6 +85,7 @@ interface SatelliteProps {
     altitude: number;
     angle: number;
     period: number;
+    EPOCH: string;
   };
 }
 
@@ -97,22 +98,23 @@ function Satellite({ data }: SatelliteProps) {
   const orbitRadius = (EARTH_RADIUS + altitude)  / SCALE;
   // Use period (hours) to set speed
   const periodSeconds = data.period * 3600; // convert hours to seconds
-  const speed = (2 * Math.PI) / (periodSeconds / TIME_SCALE); // radians per frame
+  const speed = (2 * Math.PI) / (periodSeconds / TIME_SCALE); // radians per second
   const inclinationRad = (data.INCLINATION * Math.PI) / 180;
   const raanRad = (data.RA_OF_ASC_NODE * Math.PI) / 180;
   const argPericenterRad = (data.ARG_OF_PERICENTER * Math.PI) / 180;
   const meanAnomalyRad = (data.MEAN_ANOMALY * Math.PI) / 180;
 
-  // Ensure time.current starts at 0 for all satellites
-  useEffect(() => {
-    time.current = 0;
-  }, []);
+  // Calculate phase offset from epoch
+  const now = new Date();
+  const epochDate = new Date(data.EPOCH);
+  const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000; // seconds
+  const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
 
-  useFrame(() => {
+  useFrame((state, delta) => {
     if (satelliteRef.current) {
-      time.current += speed;
+      time.current += speed * delta;
       // Satellite position in its local orbit plane (XZ)
-      const phase = time.current + meanAnomalyRad;
+      const phase = time.current + meanAnomalyRad + phaseOffset;
       const x = Math.cos(phase) * orbitRadius;
       const z = Math.sin(phase) * orbitRadius;
       satelliteRef.current.position.set(x, 0, z);
@@ -160,9 +162,12 @@ function Globe() {
   const meshRef = useRef<THREE.Mesh>(null!);
   const texture = useLoader(THREE.TextureLoader, earthTexture);
 
-  useFrame(() => {
+  // Earth rotates 360° in 86400 seconds (24 hours)
+  const earthRotationSpeed = (2 * Math.PI) / 86400 * TIME_SCALE; // radians per second
+
+  useFrame((state, delta) => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.001;
+      meshRef.current.rotation.y += earthRotationSpeed * delta;
     }
   });
 
