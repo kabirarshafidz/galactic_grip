@@ -51,7 +51,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    - Real-time visualization of satellite coverage areas
    - Dynamic lighting with ambient and point lights
 
-   ![3D Visualization](/public/images/main-view.jpeg)
+   ![3D Visualization](/public/images/main-view.png)
 
 2. **Beacon Management**
    - Add up to 3 custom beacons
