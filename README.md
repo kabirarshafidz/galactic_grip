@@ -98,7 +98,6 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    - View real-time handshake connections between beacons and satellites
 
    ![View Controls](/public/images/view-controls-1.jpeg)
-
    ![View Controls](/public/images/view-controls-2.jpeg)
 
 ### Tips
