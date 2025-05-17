@@ -21,6 +21,7 @@ export default function Home() {
   const [stats, setStats] = useState(initialStats);
   const [coveringIridiums, setCoveringIridiums] = useState<string[]>([]);
   const lastUpdateTime = useRef<number>(0);
+  const animationFrameId = useRef<number | null>(null);
 
   const handleStart = () => {
     setSimulationTime(0);
@@ -31,6 +32,11 @@ export default function Home() {
 
   const handleCancel = () => {
     setIsRunning(false);
+    if (animationFrameId.current !== null) {
+      cancelAnimationFrame(animationFrameId.current);
+      animationFrameId.current = null;
+    }
+    lastUpdateTime.current = Date.now();
   };
 
   useEffect(() => {
@@ -51,14 +57,17 @@ export default function Home() {
       });
 
       if (isRunning) {
-        requestAnimationFrame(updateSimulation);
+        animationFrameId.current = requestAnimationFrame(updateSimulation);
       }
     };
 
-    requestAnimationFrame(updateSimulation);
+    animationFrameId.current = requestAnimationFrame(updateSimulation);
 
     return () => {
-      setIsRunning(false);
+      if (animationFrameId.current !== null) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
     };
   }, [isRunning, timeScale]);
 
