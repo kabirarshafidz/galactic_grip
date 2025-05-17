@@ -60,24 +60,23 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    - Adjust local solar time (for sun-synchronous) or inclination (for non-polar)
 
    ![Beacon Configuration](/public/images/beacon-config-1.jpeg)
-
    ![Beacon Configuration](/public/images/beacon-config-2.jpeg)
 
-3. **Satellite Tracking**
+4. **Satellite Tracking**
    - Real-time tracking of satellite positions
    - Visual representation of satellite coverage areas
    - Handshake detection between beacons and satellites
 
    ![Satellite Tracking](/public/images/satellite-tracking.jpeg)
 
-4. **Simulation Controls**
+5. **Simulation Controls**
    - Start, pause, and reset simulation
    - Adjustable time scale (1 second to 3 hours per real second)
    - Timeline control for precise time navigation
 
    ![Simulation Controls](/public/images/simulation-controls.jpeg)
 
-5. **Statistics and Analytics**
+6. **Statistics and Analytics**
    - Real-time handshake statistics
    - Coverage time analysis
    - Per-satellite and per-beacon metrics
