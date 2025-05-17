@@ -137,7 +137,7 @@ export default function Home() {
   }, [isRunning, isPaused, timeScale]);
 
   return (
-    <main className="w-full h-screen">
+    <main className="w-full h-screen relative">
       <Earth 
         simulationTime={simulationTime} 
         timeScale={timeScale} 
@@ -174,6 +174,12 @@ export default function Home() {
         isPaused={isPaused}
         onBeaconSelect={handleBeaconSelect}
       />
+      {/* Title at the bottom */}
+      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-center">
+        <h1 className="text-4xl font-bold text-white bg-black/50 px-8 py-4 rounded-lg backdrop-blur-sm">
+          Galactic Grip Space Handshakes
+        </h1>
+      </div>
     </main>
   );
 }
