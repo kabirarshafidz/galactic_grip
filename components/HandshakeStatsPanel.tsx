@@ -110,6 +110,9 @@ export default function HandshakeStatsPanel({
         fontSize: '14px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
       }}>
         {/* Control Buttons */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -372,54 +375,41 @@ export default function HandshakeStatsPanel({
             </tbody>
           </table>
         </div>
-      </div>
 
-      {/* Handshaking Panel */}
-      <div ref={handshakePanelRef} style={{
-        position: 'absolute',
-        top: 20 + statsPanelHeight + 20,
-        right: 20,
-        background: 'rgba(30,144,255,0.15)',
-        backdropFilter: 'blur(12px)',
-        color: '#1e90ff',
-        padding: '12px',
-        borderRadius: '12px',
-        width: '240px',
-        minHeight: '60px',
-        zIndex: 1100,
-        fontFamily: 'var(--font-geist-sans)',
-        fontSize: '13px',
-        fontWeight: '600',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-        border: '1px solid rgba(30,144,255,0.2)',
-        transform: 'translateY(0)',
-      }}>
-        <div style={{ marginBottom: '6px' }}>
-          {selectedBeaconId ? `Beacon ${selectedBeaconId} handshaking with:` : 'Currently handshaking with:'}
-        </div>
-        <div style={{ color: '#fff' }}>
-          {currentCoveringIridiums.length > 0 ? (
-            <ul style={{ 
-              paddingLeft: '16px', 
-              margin: 0,
-              listStyleType: 'none'
-            }}>
-              {currentCoveringIridiums.map((id: string) => (
-                <li key={id} style={{ 
-                  color: '#fff', 
-                  fontWeight: 'normal', 
-                  fontSize: '12px', 
-                  margin: '2px 0',
-                  padding: 0,
-                  opacity: 0.9
-                }}>
-                  {id}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span style={{ opacity: 0.7 }}>None</span>
-          )}
+        {/* Handshaking Panel - Now integrated into stats panel */}
+        <div style={{
+          background: 'rgba(30,144,255,0.15)',
+          padding: '12px',
+          borderRadius: '6px',
+          border: '1px solid rgba(30,144,255,0.2)',
+        }}>
+          <div style={{ marginBottom: '6px', color: '#1e90ff', fontWeight: '600' }}>
+            {selectedBeaconId ? `Beacon ${selectedBeaconId} handshaking with:` : 'Currently handshaking with:'}
+          </div>
+          <div style={{ color: '#fff' }}>
+            {currentCoveringIridiums.length > 0 ? (
+              <ul style={{ 
+                paddingLeft: '16px', 
+                margin: 0,
+                listStyleType: 'none'
+              }}>
+                {currentCoveringIridiums.map((id: string) => (
+                  <li key={id} style={{ 
+                    color: '#fff', 
+                    fontWeight: 'normal', 
+                    fontSize: '12px', 
+                    margin: '2px 0',
+                    padding: 0,
+                    opacity: 0.9
+                  }}>
+                    {id}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span style={{ opacity: 0.7 }}>None</span>
+            )}
+          </div>
         </div>
       </div>
     </>
