@@ -2,9 +2,10 @@
 import Earth from "@/components/Earth";
 import React, { useState, useRef, useEffect } from "react";
 import HandshakeStatsPanel from "@/components/HandshakeStatsPanel";
+import OrbitConfigPanel from "@/components/OrbitConfigPanel";
 
 // How many seconds of simulation time pass per real second
-const DEFAULT_TIME_SCALE = 1440*2*3*2; // 24 hours (86400s) / 1 minute (60s) = 1440 seconds per second
+const DEFAULT_TIME_SCALE = 10800; // 3 hours per second (3 * 60 * 60)
 const SIM_DURATION = 86400; // 24h in seconds
 
 const initialStats = {
@@ -21,6 +22,12 @@ export default function Home() {
   const [timeScale, setTimeScale] = useState(DEFAULT_TIME_SCALE);
   const [stats, setStats] = useState(initialStats);
   const [coveringIridiums, setCoveringIridiums] = useState<string[]>([]);
+  const [orbitConfig, setOrbitConfig] = useState({
+    isSunSync: true,
+    altitude: 410,
+    lst: 12.0,
+    inclination: 64.0
+  });
   const lastUpdateTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
 
@@ -60,6 +67,27 @@ export default function Home() {
     lastUpdateTime.current = Date.now();
   };
 
+  const handleTimeChange = (newTime: number) => {
+    setSimulationTime(newTime);
+  };
+
+  const handleOrbitConfigChange = (config: {
+    isSunSync: boolean;
+    altitude: number;
+    lst?: number;
+    inclination?: number;
+    timeScale?: number;
+  }) => {
+    setOrbitConfig({
+      ...config,
+      lst: config.lst ?? orbitConfig.lst,
+      inclination: config.inclination ?? orbitConfig.inclination
+    });
+    if (config.timeScale !== undefined) {
+      setTimeScale(config.timeScale);
+    }
+  };
+
   useEffect(() => {
     if (!isRunning || isPaused) return;
 
@@ -95,7 +123,16 @@ export default function Home() {
 
   return (
     <main className="w-full h-screen">
-      <Earth simulationTime={simulationTime} timeScale={timeScale} isRunning={isRunning} stats={stats} setStats={setStats} coveringIridiums={coveringIridiums} setCoveringIridiums={setCoveringIridiums} />
+      <Earth 
+        simulationTime={simulationTime} 
+        timeScale={timeScale} 
+        isRunning={isRunning} 
+        stats={stats} 
+        setStats={setStats} 
+        coveringIridiums={coveringIridiums} 
+        setCoveringIridiums={setCoveringIridiums}
+        orbitConfig={orbitConfig}
+      />
       <HandshakeStatsPanel
         simulationTime={simulationTime}
         isRunning={isRunning}
@@ -106,6 +143,13 @@ export default function Home() {
         timeScale={timeScale}
         stats={stats}
         coveringIridiums={coveringIridiums}
+        onTimeChange={handleTimeChange}
+      />
+      <OrbitConfigPanel 
+        onConfigChange={handleOrbitConfigChange} 
+        currentTimeScale={timeScale}
+        isRunning={isRunning}
+        isPaused={isPaused}
       />
     </main>
   );

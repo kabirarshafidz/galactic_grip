@@ -65,11 +65,11 @@ function isBeaconInCone(beaconPos: THREE.Vector3, satPos: THREE.Vector3, satAlti
 
 function Beacon({
   altitude,
-  color, // will be ignored, dynamic color used
+  color,
   size = SATELLITE_SIZE/SCALE,
   inclination = 64,
   sunSynchronous = false,
-  lst = 12, // noon by default
+  lst = 12,
   simulationTime = 0,
   isRunning = false,
   satelliteData,
@@ -78,7 +78,7 @@ function Beacon({
 }: BeaconProps & { simulationTime: number, isRunning: boolean, satelliteData: any[], timeScale: number, coveringIridiums: string[] }) {
   const groupRef = useRef<THREE.Group>(null!);
   const [beaconColor, setBeaconColor] = useState('blue');
-  const raanRad = useRef(0);
+  const [raanRad, setRaanRad] = useState(0);
 
   // Inclination for sun-sync orbits
   const inclinationDeg = sunSynchronous ? 97.5 : inclination;
@@ -89,6 +89,18 @@ function Beacon({
   const MU = 398600.4418; // Earth's standard gravitational parameter, km^3/s^2
   const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
   const angularSpeed = (2 * Math.PI) / periodSeconds; // radians/sec
+
+  // Calculate RAAN based on LST for sun-synchronous orbits
+  useEffect(() => {
+    if (sunSynchronous) {
+      // Convert LST to radians (24 hours = 2π radians)
+      const lstRad = (lst * Math.PI) / 12;
+      // For sun-synchronous orbits, RAAN is related to LST
+      // RAAN = LST - π/2 (to align with the sun)
+      const newRaanRad = lstRad - Math.PI / 2;
+      setRaanRad(newRaanRad);
+    }
+  }, [lst, sunSynchronous]);
 
   // Animation uses simulationTime for perfect sync
   useFrame(() => {
@@ -108,7 +120,7 @@ function Beacon({
 
   // Compose the orbit plane rotation: RAAN (Y), inclination (X)
   return (
-    <group rotation={[0, raanRad.current, 0]}>
+    <group rotation={[0, raanRad, 0]}>
       <group rotation={[inclinationRad, 0, 0]}>
         <group ref={groupRef}>
           {/* Main beacon */}
@@ -278,7 +290,32 @@ function Sun() {
   );
 }
 
-export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = false, stats, setStats, coveringIridiums, setCoveringIridiums }: { simulationTime?: number, timeScale?: number, isRunning?: boolean, stats: any, setStats: any, coveringIridiums: string[], setCoveringIridiums: (ids: string[]) => void }) {
+interface EarthProps {
+  simulationTime?: number;
+  timeScale?: number;
+  isRunning?: boolean;
+  stats: any;
+  setStats: any;
+  coveringIridiums: string[];
+  setCoveringIridiums: (ids: string[]) => void;
+  orbitConfig: {
+    isSunSync: boolean;
+    altitude: number;
+    lst: number;
+    inclination: number;
+  };
+}
+
+export default function Earth({ 
+  simulationTime = 0, 
+  timeScale = 48, 
+  isRunning = false, 
+  stats, 
+  setStats, 
+  coveringIridiums, 
+  setCoveringIridiums,
+  orbitConfig
+}: EarthProps) {
   // Use a typical altitude for the ring, or the first satellite's altitude if available
   const ringAltitude = satelliteData[0]?.altitude || 780;
   const ringRadius = (EARTH_RADIUS + ringAltitude) / SCALE;
@@ -317,7 +354,7 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
     if (!isRunning) return;
 
     // Calculate beacon position
-    const beaconAltitude = 20; // match the Beacon's altitude prop
+    const beaconAltitude = orbitConfig.altitude;
     const orbitRadius = EARTH_RADIUS + beaconAltitude;
     const MU = 398600.4418;
     const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
@@ -490,11 +527,12 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
           sunSynchronous={false}
         /> */}
         <Beacon 
-          altitude={20}
+          altitude={orbitConfig.altitude}
           color="blue" 
           size={SATELLITE_SIZE/SCALE} 
-          sunSynchronous={true}
-          lst={12.0} // 10:00am
+          sunSynchronous={orbitConfig.isSunSync}
+          lst={orbitConfig.lst}
+          inclination={orbitConfig.inclination}
           simulationTime={simulationTime}
           isRunning={isRunning}
           satelliteData={satelliteData}
