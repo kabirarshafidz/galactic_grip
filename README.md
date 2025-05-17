@@ -48,7 +48,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
 
 1. **3D Space Visualization**
    - Interactive 3D Earth with satellite orbits
-   - Real-time visualization of satellite coverage areas
+   - Visualization of satellite coverage areas
    - Dynamic lighting with ambient and point lights
 
    ![3D Visualization](/public/images/main-view.png)
@@ -63,7 +63,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    ![Beacon Configuration](/public/images/beacon-config-2.jpeg)
 
 4. **Satellite Tracking**
-   - Real-time tracking of satellite positions
+   - Real-data tracking of satellite positions
    - Visual representation of satellite coverage areas
    - Handshake detection between beacons and satellites
 
@@ -77,7 +77,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    ![Simulation Controls](/public/images/simulation-controls.jpeg)
 
 6. **Statistics and Analytics**
-   - Real-time handshake statistics
+   - Simulated handshake statistics
    - Coverage time analysis
    - Per-satellite and per-beacon metrics
 
@@ -95,7 +95,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
 3. **Interactive Features**
    - Toggle between free view and beacon-following mode
    - Lock camera to follow a specific beacon's orbit
-   - View real-time handshake connections between beacons and satellites
+   - View handshake connections between beacons and satellites
 
    ![View Controls](/public/images/view-controls-1.jpeg)
    ![View Controls](/public/images/view-controls-2.jpeg)
