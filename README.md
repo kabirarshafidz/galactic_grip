@@ -82,7 +82,7 @@ Or visit the deployed version at: [https://galactic-grip.vercel.app](https://gal
    - Coverage time analysis
    - Per-satellite and per-beacon metrics
 
-   ![Statistics Panel](/public/images/stats-panel.jpeg)
+   ![Statistics Panel](/public/images/stats-panel.png)
 
 ### Basic Navigation
 1. **Camera Controls**
