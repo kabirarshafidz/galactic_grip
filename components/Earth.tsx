@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Sphere, Box, Stars, Html } from '@react-three/drei';
+import { OrbitControls, Sphere, Box, Stars, Html, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import satelliteData from '../satellite1.json';
 import { cover } from 'three/src/extras/TextureUtils.js';
@@ -283,6 +283,7 @@ interface EarthProps {
     timeScale?: number;
   }>;
   selectedBeaconId?: string;
+  isViewLocked?: boolean;
 }
 
 // Compute coveringIridiums for each beacon individually
@@ -339,6 +340,141 @@ function deepEqual(a: any, b: any): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// Add CameraController component
+function CameraController({ 
+  isViewLocked, 
+  selectedBeaconId, 
+  beaconConfigs, 
+  simulationTime 
+}: { 
+  isViewLocked: boolean;
+  selectedBeaconId?: string;
+  beaconConfigs: Array<{
+    id: string;
+    isSunSync: boolean;
+    altitude: number;
+    lst?: number;
+    inclination?: number;
+    color: string;
+    timeScale?: number;
+  }>;
+  simulationTime: number;
+}) {
+  const cameraRef = useRef<THREE.PerspectiveCamera>(null!);
+  const controlsRef = useRef<any>(null!);
+  const [cameraAltitude, setCameraAltitude] = useState(20000); // Start at 20,000 km
+  const lastDistanceRef = useRef<number>(20000);
+
+  // Function to calculate position in orbit with all orbital parameters
+  const getOrbitalPosition = (altitude: number, time: number, inclination: number, isSunSync: boolean, lst?: number) => {
+    const orbitRadius = (EARTH_RADIUS + altitude) / SCALE;
+    const MU = 398600.4418;
+    const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius * SCALE, 3) / MU);
+    const angularSpeed = (2 * Math.PI) / periodSeconds;
+    const t = angularSpeed * time;
+
+    // Calculate RAAN based on orbit type
+    let raanRad = 0;
+    if (isSunSync && lst !== undefined) {
+      // For sun-synchronous orbits, calculate RAAN from LST
+      const lstRad = (lst * Math.PI) / 12;
+      raanRad = lstRad - Math.PI / 2;
+    } else {
+      // For non-polar orbits, use a fixed RAAN of 0
+      raanRad = 0;
+    }
+
+    // Convert inclination to radians
+    const inclinationRad = (inclination * Math.PI) / 180;
+
+    // Calculate position in orbital plane
+    const x = Math.cos(t) * orbitRadius;
+    const z = Math.sin(t) * orbitRadius;
+    const pos = new THREE.Vector3(x, 0, z);
+
+    // Apply orbital plane rotations
+    const matrix = new THREE.Matrix4();
+    matrix.makeRotationY(raanRad)
+      .multiply(new THREE.Matrix4().makeRotationX(inclinationRad));
+    
+    pos.applyMatrix4(matrix);
+    return pos;
+  };
+
+  // Update camera position to follow selected beacon
+  useFrame(() => {
+    if (isViewLocked && selectedBeaconId && cameraRef.current) {
+      const selectedBeacon = beaconConfigs.find(b => b.id === selectedBeaconId);
+      if (selectedBeacon) {
+        // Get beacon's orbital parameters
+        const inclination = selectedBeacon.isSunSync ? 97.5 : (selectedBeacon.inclination || 64);
+        const lst = selectedBeacon.lst;
+
+        // Calculate beacon position
+        const beaconPos = getOrbitalPosition(
+          selectedBeacon.altitude,
+          simulationTime,
+          inclination,
+          selectedBeacon.isSunSync,
+          lst
+        );
+        
+        // Calculate direction from Earth's center to beacon
+        const direction = beaconPos.clone().normalize();
+        
+        // Position camera directly above beacon at current altitude
+        const cameraPos = direction.multiplyScalar(cameraAltitude / SCALE);
+        
+        cameraRef.current.position.copy(cameraPos);
+        // Look at Earth's center
+        cameraRef.current.lookAt(0, 0, 0);
+      }
+    }
+  });
+
+  // Handle zoom
+  useEffect(() => {
+    if (!controlsRef.current) return;
+
+    const handleZoom = () => {
+      if (isViewLocked) {
+        const distance = cameraRef.current.position.length() * SCALE;
+        // Only update if the distance has changed significantly
+        if (Math.abs(distance - lastDistanceRef.current) > 100) {
+          lastDistanceRef.current = distance;
+          // Clamp altitude between 10,000 km and 50,000 km
+          setCameraAltitude(Math.max(10000, Math.min(50000, distance)));
+        }
+      }
+    };
+
+    controlsRef.current.addEventListener('change', handleZoom);
+    return () => {
+      if (controlsRef.current) {
+        controlsRef.current.removeEventListener('change', handleZoom);
+      }
+    };
+  }, [isViewLocked]);
+
+  return (
+    <>
+      <PerspectiveCamera ref={cameraRef} makeDefault position={[0, 0, 25]} />
+      <OrbitControls 
+        ref={controlsRef}
+        enablePan={false}
+        minDistance={8}
+        maxDistance={30}
+        enabled={true}
+        enableRotate={!isViewLocked}
+        target={[0, 0, 0]}
+        enableDamping={true}
+        dampingFactor={0.05}
+        zoomSpeed={1}
+      />
+    </>
+  );
+}
+
 export default function Earth({ 
   simulationTime = 0, 
   timeScale = 48, 
@@ -349,7 +485,8 @@ export default function Earth({
   setCoveringIridiums,
   setCoveringIridiumsByBeacon,
   beaconConfigs,
-  selectedBeaconId
+  selectedBeaconId,
+  isViewLocked = false
 }: EarthProps) {
   // Use a typical altitude for the ring, or the first satellite's altitude if available
   const ringAltitude = satelliteData[0]?.altitude || 780;
@@ -591,7 +728,7 @@ export default function Earth({
   return (
     <div className="w-full h-full">
       <Canvas 
-        camera={{ position: [0, 5, 15], fov: 75 }}
+        camera={{ position: [0, 25, 50], fov: 75 }}
         shadows
       >
         <fog attach="fog" args={['#000000', 20, 40]} />
@@ -626,17 +763,17 @@ export default function Earth({
           }
 
           return (
-        <Beacon 
+            <Beacon 
               key={config.id}
               altitude={config.altitude}
               color={config.color}
-          size={SATELLITE_SIZE/SCALE} 
+              size={SATELLITE_SIZE/SCALE} 
               sunSynchronous={config.isSunSync}
               lst={config.lst}
               inclination={config.inclination}
               simulationTime={simulationTime}
-          isRunning={isRunning}
-          satelliteData={satelliteData}
+              isRunning={isRunning}
+              satelliteData={satelliteData}
               timeScale={timeScale}
               coveringIridiums={getCoveringIridiumsByBeacon(simulationTime, beaconConfigs, satelliteData, timeScale)[config.id]}
               raanRad={raanRad}
@@ -652,10 +789,11 @@ export default function Earth({
             simulationTime={simulationTime}
           />
         ))}
-        <OrbitControls 
-          enablePan={false} 
-          minDistance={8}  // Minimum zoom distance (closest to Earth)
-          maxDistance={30} // Maximum zoom distance (furthest from Earth)
+        <CameraController 
+          isViewLocked={isViewLocked}
+          selectedBeaconId={selectedBeaconId}
+          beaconConfigs={beaconConfigs}
+          simulationTime={simulationTime}
         />
       </Canvas>
     </div>

@@ -15,6 +15,8 @@ export default function HandshakeStatsPanel({
   onTimeChange,
   onTimeScaleChange,
   selectedBeaconId,
+  isViewLocked,
+  onViewLockChange,
 }: {
   simulationTime: number;
   isRunning: boolean;
@@ -29,6 +31,8 @@ export default function HandshakeStatsPanel({
   onTimeChange?: (time: number) => void;
   onTimeScaleChange?: (timeScale: number) => void;
   selectedBeaconId?: string;
+  isViewLocked?: boolean;
+  onViewLockChange?: (locked: boolean) => void;
 }) {
   const handshakePanelRef = useRef<HTMLDivElement>(null);
   const statsPanelRef = useRef<HTMLDivElement>(null);
@@ -159,6 +163,49 @@ export default function HandshakeStatsPanel({
             Reset
           </button>
         </div>
+
+        {/* View Lock Toggle */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          gap: '8px', 
+          marginBottom: '12px',
+          padding: '8px',
+          background: 'rgba(255,255,255,0.1)',
+          borderRadius: '4px',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}>
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            cursor: 'pointer',
+            userSelect: 'none',
+            width: '100%',
+            justifyContent: 'center'
+          }}>
+            <input
+              type="checkbox"
+              checked={isViewLocked}
+              onChange={(e) => onViewLockChange?.(e.target.checked)}
+              style={{ 
+                cursor: 'pointer',
+                width: '16px',
+                height: '16px',
+                margin: 0
+              }}
+            />
+            <span style={{ 
+              color: '#1e90ff', 
+              fontWeight: 'bold',
+              fontSize: '14px'
+            }}>
+              {isViewLocked ? '🔒 Locked to Beacon' : '🔓 Free View'}
+            </span>
+          </label>
+        </div>
+
         <div style={{marginBottom: 8}}>
           <div style={{ color: '#aaa' }}>Time: {formatTime(simulationTime)} / 24:00:00</div>
           <input

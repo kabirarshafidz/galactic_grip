@@ -33,6 +33,7 @@ export default function Home() {
     color: string;
   }>>([]);
   const [selectedBeaconId, setSelectedBeaconId] = useState<string | undefined>();
+  const [isViewLocked, setIsViewLocked] = useState(false);
   const lastUpdateTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
 
@@ -148,6 +149,7 @@ export default function Home() {
         setCoveringIridiumsByBeacon={setCoveringIridiumsByBeacon}
         beaconConfigs={beaconConfigs}
         selectedBeaconId={selectedBeaconId}
+        isViewLocked={isViewLocked}
       />
       <HandshakeStatsPanel
         simulationTime={simulationTime}
@@ -162,6 +164,8 @@ export default function Home() {
         onTimeChange={handleTimeChange}
         onTimeScaleChange={handleTimeScaleChange}
         selectedBeaconId={selectedBeaconId}
+        isViewLocked={isViewLocked}
+        onViewLockChange={setIsViewLocked}
       />
       <BeaconManager 
         beacons={beaconConfigs}
