@@ -50,7 +50,7 @@ function Beacon({
   lst = 12, // noon by default
 }: BeaconProps) {
   const groupRef = useRef<THREE.Group>(null!);
-  const [beaconColor, setBeaconColor] = useState('green');
+  const [beaconColor, setBeaconColor] = useState('blue');
   const time = useRef(0);
 
   // Inclination for sun-sync orbits
@@ -104,17 +104,20 @@ function Beacon({
     // Cone apex at satPos, axis toward Earth's center (0,0,0)
     const axis = (new THREE.Vector3(0,0,0)).clone().sub(satPos).normalize();
     const beaconVec = beaconPos.clone().sub(satPos);
-    const beaconDist = beaconVec.length();
-    const beaconDir = beaconVec.clone().normalize();
-    // Cone geometry based on visualization
-    const h = (satAltitude + CONE_HEIGHT_FACTOR) / SCALE; // cone height in scene units
-    const halfAngle = Math.atan(CONE_RADIUS / h / SCALE); // CONE_RADIUS in km, h in scene units, so convert CONE_RADIUS to scene units
-    const angle = axis.angleTo(beaconDir);
-    const EPSILON = 0.01; // ~0.5 degree in radians
-    const inside = (angle < halfAngle + EPSILON) && (beaconDist < h + EPSILON);
+    // Cone height (from satellite to tangent point on Earth, in scene units)
+    const h = (satAltitude + CONE_HEIGHT_FACTOR) / SCALE;
+    // Project beacon vector onto axis to get height along the cone
+    const heightOnAxis = beaconVec.dot(axis);
+    if (heightOnAxis < 0 || heightOnAxis > h) return false;
+    // Perpendicular (radial) distance from axis
+    const perpendicular = beaconVec.clone().sub(axis.clone().multiplyScalar(heightOnAxis));
+    const radialDist = perpendicular.length();
+    // Allowed radius at this height (cone expands linearly)
+    const allowedRadius = (CONE_RADIUS / h) * heightOnAxis / SCALE; // CONE_RADIUS in km, convert to scene units
+    const inside = radialDist <= allowedRadius;
     if (inside) {
       console.log(
-        `Beacon is under a cone: angle = ${(angle * 180 / Math.PI).toFixed(2)}°, halfAngle = ${(halfAngle * 180 / Math.PI).toFixed(2)}°`
+        `Beacon is under a cone: radialDist = ${radialDist.toFixed(4)}, allowedRadius = ${allowedRadius.toFixed(4)}, heightOnAxis = ${heightOnAxis.toFixed(4)}, h = ${h.toFixed(4)}`
       );
     }
     return inside;
@@ -135,11 +138,15 @@ function Beacon({
 
       // --- Coverage check logic ---
       const beaconPos = getBeaconWorldPosition(time.current);
-      const covered = satelliteData.some(sat => {
+      let covered = false;
+      for (let sat of satelliteData) {
         const satPos = getSatelliteWorldPosition(sat, time.current);
-        return isBeaconInCone(beaconPos, satPos, sat.altitude);
-      });
-      setBeaconColor(covered ? 'green' : 'red');
+        if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
+          covered = true;
+          break;
+        }
+      }
+      setBeaconColor(covered ? 'blue' : 'red');
     }
   });
 
@@ -385,8 +392,8 @@ export default function Earth() {
           sunSynchronous={false}
         /> */}
         <Beacon 
-          altitude={10}
-          color="green" 
+          altitude={150}
+          color="blue" 
           size={SATELLITE_SIZE/SCALE} 
           sunSynchronous={true}
           lst={12.0} // 10:00am
