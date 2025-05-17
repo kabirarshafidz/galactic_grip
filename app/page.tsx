@@ -166,7 +166,6 @@ export default function Home() {
       <BeaconManager 
         beacons={beaconConfigs}
         onConfigChange={handleBeaconConfigChange}
-        currentTimeScale={timeScale}
         isRunning={isRunning}
         isPaused={isPaused}
         onBeaconSelect={handleBeaconSelect}

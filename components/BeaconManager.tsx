@@ -21,7 +21,6 @@ interface BeaconManagerProps {
     timeScale?: number;
     color: string;
   }>) => void;
-  currentTimeScale: number;
   isRunning: boolean;
   isPaused: boolean;
   onBeaconSelect?: (beaconId: string | undefined) => void;
@@ -39,7 +38,6 @@ const AVAILABLE_COLORS = [
 export default function BeaconManager({
   beacons,
   onConfigChange,
-  currentTimeScale,
   isRunning,
   isPaused,
   onBeaconSelect
@@ -262,7 +260,6 @@ export default function BeaconManager({
 
               <OrbitConfigPanel
                 onConfigChange={(config) => handleConfigChange(beacon.id, config)}
-                currentTimeScale={currentTimeScale}
                 isRunning={isRunning}
                 isPaused={isPaused}
                 defaultConfig={{
