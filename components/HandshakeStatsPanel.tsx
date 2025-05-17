@@ -4,16 +4,20 @@ import React, { useState, useEffect } from 'react';
 export default function HandshakeStatsPanel({
   simulationTime,
   isRunning,
+  isPaused,
   onStart,
-  onCancel,
+  onPause,
+  onReset,
   timeScale,
   stats,
   coveringIridiums = []
 }: {
   simulationTime: number;
   isRunning: boolean;
+  isPaused: boolean;
   onStart: () => void;
-  onCancel: () => void;
+  onPause: () => void;
+  onReset: () => void;
   timeScale: number;
   stats: any;
   coveringIridiums?: string[];
@@ -38,7 +42,8 @@ export default function HandshakeStatsPanel({
         color: '#1e90ff',
         padding: '10px 18px',
         borderRadius: '8px',
-        minWidth: '220px',
+        width: '240px',
+        minHeight: '60px',
         zIndex: 1100,
         fontFamily: 'monospace',
         fontSize: '15px',
@@ -46,7 +51,17 @@ export default function HandshakeStatsPanel({
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
       }}>
         Currently handshaking with:<br />
-        <span style={{color: '#fff'}}>{coveringIridiums.length > 0 ? coveringIridiums.join(', ') : 'None'}</span>
+        <div style={{ color: '#fff', marginTop: 4 }}>
+          {coveringIridiums.length > 0 ? (
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              {coveringIridiums.map((id) => (
+                <li key={id} style={{ color: '#fff', fontWeight: 'normal', fontSize: 15, margin: 0, padding: 0 }}>{id}</li>
+              ))}
+            </ul>
+          ) : (
+            <span>None</span>
+          )}
+        </div>
       </div>
       <div style={{
         position: 'absolute',
@@ -56,14 +71,60 @@ export default function HandshakeStatsPanel({
         color: 'white',
         padding: '16px',
         borderRadius: '8px',
-        minWidth: '340px',
+        width: '360px',
+        minHeight: '340px',
         zIndex: 1000,
         fontFamily: 'monospace',
         fontSize: '14px',
       }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={onStart} disabled={isRunning} style={{ padding: '6px 16px', fontWeight: 'bold', fontSize: '15px', borderRadius: 4, border: 'none', background: isRunning ? '#444' : '#1e90ff', color: 'white', cursor: isRunning ? 'not-allowed' : 'pointer'}}>Start Simulation</button>
-          <button onClick={onCancel} disabled={!isRunning} style={{ padding: '6px 16px', fontWeight: 'bold', fontSize: '15px', borderRadius: 4, border: 'none', background: !isRunning ? '#444' : '#ff4d4f', color: 'white', cursor: !isRunning ? 'not-allowed' : 'pointer'}}>Cancel Simulation</button>
+          <button
+            onClick={onStart}
+            disabled={isRunning && !isPaused}
+            style={{
+              padding: '6px 16px',
+              fontWeight: 'bold',
+              fontSize: '15px',
+              borderRadius: 4,
+              border: 'none',
+              background: isRunning && !isPaused ? '#444' : '#1e90ff',
+              color: 'white',
+              cursor: isRunning && !isPaused ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isPaused ? 'Continue' : 'Start'}
+          </button>
+          <button
+            onClick={onPause}
+            disabled={!isRunning || isPaused}
+            style={{
+              padding: '6px 16px',
+              fontWeight: 'bold',
+              fontSize: '15px',
+              borderRadius: 4,
+              border: 'none',
+              background: (!isRunning || isPaused) ? '#444' : '#ffb300',
+              color: 'white',
+              cursor: (!isRunning || isPaused) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Pause
+          </button>
+          <button
+            onClick={onReset}
+            style={{
+              padding: '6px 16px',
+              fontWeight: 'bold',
+              fontSize: '15px',
+              borderRadius: 4,
+              border: 'none',
+              background: '#ff4d4f',
+              color: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Reset
+          </button>
         </div>
         <div style={{marginBottom: 8}}>
           <div>Time: {formatTime(simulationTime)} / 24:00:00</div>
