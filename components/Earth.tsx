@@ -416,13 +416,39 @@ export default function Earth({
   useEffect(() => {
     if (!isRunning) return;
 
+    // Initialize handshakeRefs for all beacons and satellites
+    beaconConfigs.forEach(beaconConfig => {
+      if (!handshakeRefs.current[beaconConfig.id]) {
+        handshakeRefs.current[beaconConfig.id] = {};
+        satelliteData.forEach(sat => {
+          handshakeRefs.current[beaconConfig.id][sat.OBJECT_NAME] = {
+            handshakeCount: 0,
+            handshakeDurations: [],
+            isCoveredLast: false,
+            lastHandshakeStart: 0,
+          };
+        });
+      }
+    });
+
+    // Initialize out-of-coverage refs for all beacons
+    beaconConfigs.forEach(beaconConfig => {
+      if (!beaconOutCoverageRefs.current[beaconConfig.id]) {
+        beaconOutCoverageRefs.current[beaconConfig.id] = {
+          outOfCoverageDurations: [],
+          lastOutOfCoverageTime: 0,
+          isOutOfCoverage: true,
+        };
+      }
+    });
+
     // Per-beacon, per-satellite handshake tracking
     beaconConfigs.forEach(beaconConfig => {
       const beaconId = beaconConfig.id;
       satelliteData.forEach(sat => {
         const satId = sat.OBJECT_NAME;
         const ref = handshakeRefs.current[beaconId][satId];
-        const isNowCovered = perBeaconCoveringRef.current[beaconId].includes(satId);
+        const isNowCovered = perBeaconCoveringRef.current[beaconId]?.includes(satId) || false;
         if (isNowCovered && !ref.isCoveredLast) {
           // Handshake started
           ref.handshakeCount++;
@@ -436,35 +462,6 @@ export default function Earth({
         ref.isCoveredLast = isNowCovered;
       });
     });
-
-    // At the end of the simulation, close any open handshakes
-    if (simulationTime >= 86400 || !isRunning) {
-      beaconConfigs.forEach(beaconConfig => {
-        const beaconId = beaconConfig.id;
-        satelliteData.forEach(sat => {
-          const satId = sat.OBJECT_NAME;
-          const ref = handshakeRefs.current[beaconId][satId];
-          if (ref.isCoveredLast && ref.lastHandshakeStart > 0) {
-            const duration = Math.min(simulationTime, 86400) - ref.lastHandshakeStart;
-            ref.handshakeDurations.push(duration);
-            ref.isCoveredLast = false;
-            ref.lastHandshakeStart = 0;
-          }
-        });
-      });
-    }
-
-    // Initialize out-of-coverage refs for all beacons
-    if (simulationTime === 0) {
-      beaconOutCoverageRefs.current = {};
-      beaconConfigs.forEach(beacon => {
-        beaconOutCoverageRefs.current[beacon.id] = {
-          outOfCoverageDurations: [],
-          lastOutOfCoverageTime: 0,
-          isOutOfCoverage: true,
-        };
-      });
-    }
 
     // For each beacon, check if it is covered by any satellite
     beaconConfigs.forEach(beaconConfig => {
@@ -485,6 +482,23 @@ export default function Earth({
         ref.isOutOfCoverage = false;
       }
     });
+
+    // At the end of the simulation, close any open handshakes
+    if (simulationTime >= 86400 || !isRunning) {
+      beaconConfigs.forEach(beaconConfig => {
+        const beaconId = beaconConfig.id;
+        satelliteData.forEach(sat => {
+          const satId = sat.OBJECT_NAME;
+          const ref = handshakeRefs.current[beaconId][satId];
+          if (ref.isCoveredLast && ref.lastHandshakeStart > 0) {
+            const duration = Math.min(simulationTime, 86400) - ref.lastHandshakeStart;
+            ref.handshakeDurations.push(duration);
+            ref.isCoveredLast = false;
+            ref.lastHandshakeStart = 0;
+          }
+        });
+      });
+    }
 
     // At the end of the simulation, close any open out-of-coverage periods
     if (simulationTime >= 86400 || !isRunning) {
@@ -638,7 +652,11 @@ export default function Earth({
             simulationTime={simulationTime}
           />
         ))}
-        <OrbitControls enableZoom={false} enablePan={false} />
+        <OrbitControls 
+          enablePan={false} 
+          minDistance={8}  // Minimum zoom distance (closest to Earth)
+          maxDistance={30} // Maximum zoom distance (furthest from Earth)
+        />
       </Canvas>
     </div>
   );
