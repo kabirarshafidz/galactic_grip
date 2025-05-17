@@ -99,32 +99,36 @@ export default function HandshakeStatsPanel({
         position: 'absolute',
         top: 20,
         right: 20,
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(8px)',
+        background: 'rgba(0,0,0,0.75)',
+        backdropFilter: 'blur(12px)',
         color: 'white',
         padding: '16px',
-        borderRadius: '8px',
+        borderRadius: '12px',
         width: '360px',
         zIndex: 1000,
-        fontFamily: 'monospace',
+        fontFamily: 'var(--font-geist-sans)',
         fontSize: '14px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         border: '1px solid rgba(255,255,255,0.1)',
       }}>
+        {/* Control Buttons */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <button
             onClick={onStart}
             disabled={isRunning && !isPaused}
             style={{
-              padding: '6px 16px',
-              fontWeight: 'bold',
-              fontSize: '15px',
-              borderRadius: 4,
+              padding: '6px 12px',
+              fontWeight: '600',
+              fontSize: '13px',
+              borderRadius: 6,
               border: 'none',
-              background: isRunning && !isPaused ? 'rgba(68,68,68,0.8)' : 'rgba(30,144,255,0.8)',
+              background: isRunning && !isPaused ? 'rgba(68,68,68,0.8)' : 'rgba(30,144,255,0.9)',
               color: 'white',
               cursor: isRunning && !isPaused ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
+              transition: 'all 0.2s ease',
+              flex: 1,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
             }}
           >
             {isPaused ? 'Continue' : 'Start'}
@@ -133,15 +137,18 @@ export default function HandshakeStatsPanel({
             onClick={onPause}
             disabled={!isRunning || isPaused}
             style={{
-              padding: '6px 16px',
-              fontWeight: 'bold',
-              fontSize: '15px',
-              borderRadius: 4,
+              padding: '6px 12px',
+              fontWeight: '600',
+              fontSize: '13px',
+              borderRadius: 6,
               border: 'none',
-              background: (!isRunning || isPaused) ? 'rgba(68,68,68,0.8)' : 'rgba(255,179,0,0.8)',
+              background: (!isRunning || isPaused) ? 'rgba(68,68,68,0.8)' : 'rgba(255,179,0,0.9)',
               color: 'white',
               cursor: (!isRunning || isPaused) ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
+              transition: 'all 0.2s ease',
+              flex: 1,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
             }}
           >
             Pause
@@ -149,15 +156,18 @@ export default function HandshakeStatsPanel({
           <button
             onClick={onReset}
             style={{
-              padding: '6px 16px',
-              fontWeight: 'bold',
-              fontSize: '15px',
-              borderRadius: 4,
+              padding: '6px 12px',
+              fontWeight: '600',
+              fontSize: '13px',
+              borderRadius: 6,
               border: 'none',
-              background: 'rgba(255,77,79,0.8)',
+              background: 'rgba(255,77,79,0.9)',
               color: 'white',
               cursor: 'pointer',
-              transition: 'background 0.2s',
+              transition: 'all 0.2s ease',
+              flex: 1,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
             }}
           >
             Reset
@@ -172,9 +182,10 @@ export default function HandshakeStatsPanel({
           gap: '8px', 
           marginBottom: '12px',
           padding: '8px',
-          background: 'rgba(255,255,255,0.1)',
-          borderRadius: '4px',
-          border: '1px solid rgba(255,255,255,0.2)'
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '6px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          transition: 'all 0.2s ease',
         }}>
           <label style={{ 
             display: 'flex', 
@@ -191,23 +202,41 @@ export default function HandshakeStatsPanel({
               onChange={(e) => onViewLockChange?.(e.target.checked)}
               style={{ 
                 cursor: 'pointer',
-                width: '16px',
-                height: '16px',
-                margin: 0
+                width: '14px',
+                height: '14px',
+                margin: 0,
+                accentColor: '#1e90ff'
               }}
             />
             <span style={{ 
               color: '#1e90ff', 
-              fontWeight: 'bold',
-              fontSize: '14px'
+              fontWeight: '600',
+              fontSize: '13px',
+              letterSpacing: '0.5px'
             }}>
               {isViewLocked ? '🔒 Locked to Beacon' : '🔓 Free View'}
             </span>
           </label>
         </div>
 
-        <div style={{marginBottom: 8}}>
-          <div style={{ color: '#aaa' }}>Time: {formatTime(simulationTime)} / 24:00:00</div>
+        {/* Time Controls */}
+        <div style={{
+          background: 'rgba(255,255,255,0.05)',
+          padding: '12px',
+          borderRadius: '6px',
+          marginBottom: '12px'
+        }}>
+          <div style={{ 
+            color: '#aaa',
+            fontSize: '12px',
+            marginBottom: '6px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span>Simulation Time</span>
+            <span style={{ color: '#fff' }}>{formatTime(simulationTime)} / 24:00:00</span>
+          </div>
           <input
             type="range"
             min="0"
@@ -221,62 +250,123 @@ export default function HandshakeStatsPanel({
               borderRadius: '2px',
               outline: 'none',
               WebkitAppearance: 'none',
-              marginTop: 8,
+              marginBottom: '12px',
             }}
           />
-          <div style={{marginTop: 12}}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#aaa', fontSize: '13px' }}>Time Scale</span>
-              <span style={{ color: '#fff', fontSize: '13px' }}>
-                {timeScale >= 3600 
-                  ? `${(timeScale / 3600).toFixed(1)} hours/s`
-                  : timeScale >= 60 
-                    ? `${(timeScale / 60).toFixed(1)} mins/s`
-                    : `${timeScale.toFixed(1)} secs/s`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="10800"
-              value={timeScale}
-              onChange={(e) => onTimeScaleChange?.(Number(e.target.value))}
-              style={{
-                width: '100%',
-                background: 'rgba(255,255,255,0.1)',
-                height: '4px',
-                borderRadius: '2px',
-                outline: 'none',
-                WebkitAppearance: 'none',
-                marginTop: 8,
-              }}
-            />
+          <div style={{ 
+            color: '#aaa',
+            fontSize: '12px',
+            marginBottom: '6px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span>Time Scale</span>
+            <span style={{ color: '#fff' }}>
+              {timeScale >= 3600 
+                ? `${(timeScale / 3600).toFixed(1)} hours/s`
+                : timeScale >= 60 
+                  ? `${(timeScale / 60).toFixed(1)} mins/s`
+                  : `${timeScale.toFixed(1)} secs/s`}
+            </span>
           </div>
-          <h3 style={{ color: '#1e90ff', margin: '12px 0' }}>
+          <input
+            type="range"
+            min="1"
+            max="10800"
+            value={timeScale}
+            onChange={(e) => onTimeScaleChange?.(Number(e.target.value))}
+            style={{
+              width: '100%',
+              background: 'rgba(255,255,255,0.1)',
+              height: '4px',
+              borderRadius: '2px',
+              outline: 'none',
+              WebkitAppearance: 'none',
+            }}
+          />
+        </div>
+
+        {/* Stats Section */}
+        <div style={{
+          background: 'rgba(255,255,255,0.05)',
+          padding: '12px',
+          borderRadius: '6px',
+          marginBottom: '12px'
+        }}>
+          <h3 style={{ 
+            color: '#1e90ff', 
+            margin: '0 0 8px 0',
+            fontSize: '14px',
+            fontWeight: '600',
+            letterSpacing: '0.5px'
+          }}>
             {selectedBeaconId ? `Beacon ${selectedBeaconId} Stats` : 'All Beacons Stats'}
           </h3>
+          <div style={{ 
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '4px',
+            marginBottom: '8px'
+          }}>
+            <div style={{ color: '#ddd', fontSize: '12px' }}>Total handshakes</div>
+            <div style={{ color: '#fff', fontSize: '12px', textAlign: 'right' }}>{totalHandshakesForBeacon}</div>
+            <div style={{ color: '#ddd', fontSize: '12px' }}>Out-of-coverage time</div>
+            <div style={{ color: '#fff', fontSize: '12px', textAlign: 'right' }}>{totalOutOfCoverageTime.toFixed(2)}s</div>
+            <div style={{ color: '#ddd', fontSize: '12px' }}>Avg out-of-coverage</div>
+            <div style={{ color: '#fff', fontSize: '12px', textAlign: 'right' }}>{avgOutOfCoverageTime.toFixed(2)}s</div>
+            <div style={{ color: '#ddd', fontSize: '12px' }}>In-coverage time</div>
+            <div style={{ color: '#fff', fontSize: '12px', textAlign: 'right' }}>{totalInCoverageTime.toFixed(2)}s</div>
+            <div style={{ color: '#ddd', fontSize: '12px' }}>Avg in-coverage</div>
+            <div style={{ color: '#fff', fontSize: '12px', textAlign: 'right' }}>{avgInCoverageTime.toFixed(2)}s</div>
+          </div>
         </div>
-        <div style={{ color: '#ddd' }}>Total handshakes: {totalHandshakesForBeacon}</div>
-        <div style={{ color: '#ddd' }}>Total out-of-coverage time: {totalOutOfCoverageTime.toFixed(2)} s</div>
-        <div style={{ color: '#ddd' }}>Average out-of-coverage time: {avgOutOfCoverageTime.toFixed(2)} s</div>
-        <div style={{ color: '#ddd' }}>Total in-coverage time: {totalInCoverageTime.toFixed(2)} s</div>
-        <div style={{ color: '#ddd' }}>Average in-coverage time: {avgInCoverageTime.toFixed(2)} s</div>
-        <hr style={{margin: '8px 0', borderColor: 'rgba(255,255,255,0.1)'}} />
-        <div style={{maxHeight: '200px', overflowY: 'auto'}}>
-          <table style={{width: '100%', color: '#ddd'}}>
+
+        {/* Satellite Table */}
+        <div style={{
+          background: 'rgba(255,255,255,0.05)',
+          padding: '12px',
+          borderRadius: '6px',
+          maxHeight: '100px',
+          overflowY: 'auto'
+        }}>
+          <table style={{
+            width: '100%',
+            color: '#ddd',
+            borderCollapse: 'collapse',
+            fontSize: '12px'
+          }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', color: '#aaa' }}>Satellite</th>
-                <th style={{ textAlign: 'right', color: '#aaa' }}>Handshakes</th>
-                <th style={{ textAlign: 'right', color: '#aaa' }}>Total Time (s)</th>
+                <th style={{ 
+                  textAlign: 'left', 
+                  color: '#aaa',
+                  padding: '0 0 6px 0',
+                  fontWeight: '500',
+                  borderBottom: '1px solid rgba(255,255,255,0.1)'
+                }}>Satellite</th>
+                <th style={{ 
+                  textAlign: 'right', 
+                  color: '#aaa',
+                  padding: '0 0 6px 0',
+                  fontWeight: '500',
+                  borderBottom: '1px solid rgba(255,255,255,0.1)'
+                }}>Handshakes</th>
+                <th style={{ 
+                  textAlign: 'right', 
+                  color: '#aaa',
+                  padding: '0 0 6px 0',
+                  fontWeight: '500',
+                  borderBottom: '1px solid rgba(255,255,255,0.1)'
+                }}>Total Time</th>
               </tr>
             </thead>
             <tbody>
               {selectedBeaconSatelliteStats && selectedBeaconSatelliteStats.map((sat: any) => (
                 <tr key={`${sat.beaconId}-${sat.satId}`}>
-                  <td>{sat.satId}</td>
-                  <td style={{ textAlign: 'right' }}>{sat.count}</td>
-                  <td style={{ textAlign: 'right' }}>{sat.total.toFixed(2)}</td>
+                  <td style={{ padding: '2px 0' }}>{sat.satId}</td>
+                  <td style={{ textAlign: 'right', padding: '2px 0' }}>{sat.count}</td>
+                  <td style={{ textAlign: 'right', padding: '2px 0' }}>{sat.total.toFixed(2)}s</td>
                 </tr>
               ))}
             </tbody>
@@ -284,35 +374,51 @@ export default function HandshakeStatsPanel({
         </div>
       </div>
 
+      {/* Handshaking Panel */}
       <div ref={handshakePanelRef} style={{
         position: 'absolute',
-        top: 20 + statsPanelHeight + 40,
+        top: 20 + statsPanelHeight + 20,
         right: 20,
         background: 'rgba(30,144,255,0.15)',
-        backdropFilter: 'blur(8px)',
+        backdropFilter: 'blur(12px)',
         color: '#1e90ff',
-        padding: '10px 18px',
-        borderRadius: '8px',
+        padding: '12px',
+        borderRadius: '12px',
         width: '240px',
         minHeight: '60px',
         zIndex: 1100,
-        fontFamily: 'monospace',
-        fontSize: '15px',
-        fontWeight: 'bold',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+        fontFamily: 'var(--font-geist-sans)',
+        fontSize: '13px',
+        fontWeight: '600',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         border: '1px solid rgba(30,144,255,0.2)',
         transform: 'translateY(0)',
       }}>
-        {selectedBeaconId ? `Beacon ${selectedBeaconId} handshaking with:` : 'Currently handshaking with:'}<br />
-        <div style={{ color: '#fff', marginTop: 4 }}>
+        <div style={{ marginBottom: '6px' }}>
+          {selectedBeaconId ? `Beacon ${selectedBeaconId} handshaking with:` : 'Currently handshaking with:'}
+        </div>
+        <div style={{ color: '#fff' }}>
           {currentCoveringIridiums.length > 0 ? (
-            <ul style={{ paddingLeft: 18, margin: 0 }}>
+            <ul style={{ 
+              paddingLeft: '16px', 
+              margin: 0,
+              listStyleType: 'none'
+            }}>
               {currentCoveringIridiums.map((id: string) => (
-                <li key={id} style={{ color: '#fff', fontWeight: 'normal', fontSize: 15, margin: 0, padding: 0 }}>{id}</li>
+                <li key={id} style={{ 
+                  color: '#fff', 
+                  fontWeight: 'normal', 
+                  fontSize: '12px', 
+                  margin: '2px 0',
+                  padding: 0,
+                  opacity: 0.9
+                }}>
+                  {id}
+                </li>
               ))}
             </ul>
           ) : (
-            <span>None</span>
+            <span style={{ opacity: 0.7 }}>None</span>
           )}
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Sphere, Box, Stars, Html, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Sphere, Box, Stars, Html, PerspectiveCamera, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import satelliteData from '../satellite1.json';
 import { cover } from 'three/src/extras/TextureUtils.js';
@@ -70,7 +70,16 @@ function Beacon({
   timeScale = 1,
   coveringIridiums = [],
   raanRad = 0,
-}: BeaconProps & { simulationTime: number, isRunning: boolean, satelliteData: any[], timeScale: number, coveringIridiums: string[], raanRad: number }) {
+  id,
+}: BeaconProps & { 
+  simulationTime: number, 
+  isRunning: boolean, 
+  satelliteData: any[], 
+  timeScale: number, 
+  coveringIridiums: string[], 
+  raanRad: number,
+  id: string
+}) {
   const groupRef = useRef<THREE.Group>(null!);
 
   // Inclination for sun-sync orbits
@@ -104,12 +113,12 @@ function Beacon({
         {/* Orbit Ring */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <torusGeometry args={[orbitRadius / SCALE, 0.02, 16, 128]} />
-          <meshBasicMaterial color={color} transparent opacity={coveringIridiums.length > 0 ? 0.8 : 0.3} />
+          <meshBasicMaterial color={color} transparent opacity={0.3} />
         </mesh>
         <group ref={groupRef}>
           {/* Main beacon */}
           <Sphere args={[size, 16, 16]}>
-            <meshBasicMaterial color={color} transparent opacity={coveringIridiums.length > 0 ? 1 : 0.5} />
+            <meshBasicMaterial color={color} transparent opacity={1} />
           </Sphere>
         </group>
       </group>
@@ -200,7 +209,6 @@ function Satellite({ data, simulationTime }: SatelliteProps & { simulationTime: 
         )}
         {/* Coverage area visualization */}
         <mesh position={[0, 0, 0.625]} rotation={[-Math.PI / 2, 0, 0]}>
-          {/* <coneGeometry args={[COVERAGE_RADIUS/SCALE, -(COVERAGE_RADIUS/(2*Math.tan(COVERAGE_ANGLE/2)))/SCALE, 32]} /> */}
           <coneGeometry args={[CONE_RADIUS/SCALE, (altitude+CONE_HEIGHT_FACTOR)/SCALE, 32]} />
           <meshBasicMaterial 
             color="cyan" 
@@ -264,26 +272,52 @@ function Sun() {
   );
 }
 
-interface EarthProps {
-  simulationTime?: number;
-  timeScale?: number;
-  isRunning?: boolean;
-  stats: any;
-  setStats: any;
-  coveringIridiums: string[];
-  setCoveringIridiums: React.Dispatch<React.SetStateAction<string[]>>;
-  setCoveringIridiumsByBeacon: (obj: { [beaconId: string]: string[] }) => void;
-  beaconConfigs: Array<{
-    id: string;
-    isSunSync: boolean;
-    altitude: number;
-    lst?: number;
-    inclination?: number;
-    color: string;
-    timeScale?: number;
-  }>;
-  selectedBeaconId?: string;
-  isViewLocked?: boolean;
+// Helper to get beacon position (shared by rendering and logic)
+function getBeaconPosition(beacon: any, simulationTime: number) {
+  const orbitRadius = (EARTH_RADIUS + beacon.altitude) / SCALE;
+  const MU = 398600.4418;
+  const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius * SCALE, 3) / MU);
+  const angularSpeed = (2 * Math.PI) / periodSeconds;
+  const t = angularSpeed * simulationTime;
+  let raanRad = 0;
+  if (beacon.isSunSync && typeof beacon.lst === 'number') {
+    const lstRad = (beacon.lst * Math.PI) / 12;
+    raanRad = lstRad - Math.PI / 2;
+  }
+  const inclinationRad = (beacon.isSunSync ? 97.5 : (beacon.inclination || 64)) * Math.PI / 180;
+  const x = Math.cos(t) * orbitRadius;
+  const z = Math.sin(t) * orbitRadius;
+  const pos = new THREE.Vector3(x, 0, z);
+  const matrix = new THREE.Matrix4();
+  matrix.makeRotationY(raanRad)
+    .multiply(new THREE.Matrix4().makeRotationX(inclinationRad));
+  pos.applyMatrix4(matrix);
+  return pos;
+}
+
+// Helper to get satellite position (shared by rendering and logic)
+function getSatellitePosition(sat: any, simulationTime: number) {
+  const orbitRadius = (EARTH_RADIUS + sat.altitude) / SCALE;
+  const periodSeconds = sat.period * 3600;
+  const speed = (2 * Math.PI) / (periodSeconds);
+  const inclinationRad = (sat.INCLINATION * Math.PI) / 180;
+  const raanRad = (sat.RA_OF_ASC_NODE * Math.PI) / 180;
+  const argPericenterRad = (sat.ARG_OF_PERICENTER * Math.PI) / 180;
+  const meanAnomalyRad = (sat.MEAN_ANOMALY * Math.PI) / 180;
+  const now = new Date();
+  const epochDate = new Date(sat.EPOCH);
+  const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
+  const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
+  const phase = speed * simulationTime + meanAnomalyRad + phaseOffset;
+  const x = Math.cos(phase) * orbitRadius;
+  const z = Math.sin(phase) * orbitRadius;
+  const pos = new THREE.Vector3(x, 0, z);
+  const matrix = new THREE.Matrix4();
+  matrix.makeRotationY(raanRad)
+    .multiply(new THREE.Matrix4().makeRotationX(inclinationRad))
+    .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
+  pos.applyMatrix4(matrix);
+  return pos;
 }
 
 // Compute coveringIridiums for each beacon individually
@@ -294,40 +328,11 @@ function getCoveringIridiumsByBeacon(simulationTime: number, beaconConfigs: any[
   beaconConfigs.forEach(beaconConfig => {
     const beaconId = beaconConfig.id;
     perBeaconCovering[beaconId] = [];
-    // Calculate beacon position using global timeScale
-    const beaconAltitude = beaconConfig.altitude;
-    const orbitRadius = EARTH_RADIUS + beaconAltitude;
-    const MU = 398600.4418;
-    const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
-    const angularSpeed = (2 * Math.PI) / periodSeconds;
-    const t = angularSpeed * clampedTime;
-    const x = Math.cos(t) * (orbitRadius / SCALE);
-    const z = Math.sin(t) * (orbitRadius / SCALE);
-    const beaconPos = new THREE.Vector3(x, 0, z);
-
+    // Use shared helper for beacon position
+    const beaconPos = getBeaconPosition(beaconConfig, clampedTime);
     satelliteData.forEach((sat) => {
-      // Satellite position at simulationTime (global)
-      const satOrbitRadius = (EARTH_RADIUS + sat.altitude) / SCALE;
-      const periodSeconds = sat.period * 3600;
-      const speed = (2 * Math.PI) / (periodSeconds);
-      const inclinationRad = (sat.INCLINATION * Math.PI) / 180;
-      const raanRad = (sat.RA_OF_ASC_NODE * Math.PI) / 180;
-      const argPericenterRad = (sat.ARG_OF_PERICENTER * Math.PI) / 180;
-      const meanAnomalyRad = (sat.MEAN_ANOMALY * Math.PI) / 180;
-      const now = new Date();
-      const epochDate = new Date(sat.EPOCH);
-      const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
-      const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
-      const phase = speed * clampedTime + meanAnomalyRad + phaseOffset;
-      const sx = Math.cos(phase) * satOrbitRadius;
-      const sz = Math.sin(phase) * satOrbitRadius;
-      const sy = 0;
-      const satPos = new THREE.Vector3(sx, sy, sz);
-      const m = new THREE.Matrix4();
-      m.makeRotationY(raanRad)
-        .multiply(new THREE.Matrix4().makeRotationX(inclinationRad))
-        .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
-      satPos.applyMatrix4(m);
+      // Use shared helper for satellite position
+      const satPos = getSatellitePosition(sat, clampedTime);
       if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
         perBeaconCovering[beaconId].push(sat.OBJECT_NAME);
       }
@@ -475,6 +480,80 @@ function CameraController({
   );
 }
 
+// Add new ConnectionLines component before the Earth component
+function ConnectionLines({ 
+  beaconConfigs, 
+  satelliteData, 
+  simulationTime, 
+  coveringIridiumsByBeacon 
+}: { 
+  beaconConfigs: Array<{
+    id: string;
+    isSunSync: boolean;
+    altitude: number;
+    lst?: number;
+    inclination?: number;
+    color: string;
+  }>;
+  satelliteData: any[];
+  simulationTime: number;
+  coveringIridiumsByBeacon: { [beaconId: string]: string[] };
+}) {
+  return (
+    <group>
+      {beaconConfigs.map(beacon => {
+        const coveringSatellites = coveringIridiumsByBeacon[beacon.id] || [];
+        return coveringSatellites.map(satId => {
+          const satellite = satelliteData.find(s => s.OBJECT_NAME === satId);
+          if (!satellite) return null;
+          const beaconPos = getBeaconPosition(beacon, simulationTime);
+          const satPos = getSatellitePosition(satellite, simulationTime);
+          return (
+            <group key={`${beacon.id}-${satId}`}>
+              <Line
+                points={[beaconPos, satPos]}
+                color={beacon.color}
+                lineWidth={3}
+                transparent={false}
+                opacity={1}
+              />
+              {/* Debug spheres at endpoints */}
+              <Sphere args={[0.12, 12, 12]} position={beaconPos}>
+                <meshBasicMaterial color="yellow" />
+              </Sphere>
+              <Sphere args={[0.12, 12, 12]} position={satPos}>
+                <meshBasicMaterial color="magenta" />
+              </Sphere>
+            </group>
+          );
+        });
+      })}
+    </group>
+  );
+}
+
+// Add this interface before the Earth component
+interface EarthProps {
+  simulationTime: number;
+  timeScale: number;
+  isRunning: boolean;
+  stats: any;
+  setStats: (stats: any) => void;
+  coveringIridiums: string[];
+  setCoveringIridiums: (coveringIridiums: string[]) => void;
+  setCoveringIridiumsByBeacon: (coveringIridiumsByBeacon: { [beaconId: string]: string[] }) => void;
+  beaconConfigs: Array<{
+    id: string;
+    isSunSync: boolean;
+    altitude: number;
+    lst?: number;
+    inclination?: number;
+    color: string;
+  }>;
+  selectedBeaconId?: string;
+  isViewLocked?: boolean;
+}
+
 export default function Earth({ 
   simulationTime = 0, 
   timeScale = 48, 
@@ -517,9 +596,9 @@ export default function Earth({
     // Initialize handshakeRefs for all beacons and satellites
     if (simulationTime === 0) {
       handshakeRefs.current = {};
-      beaconConfigs.forEach(beacon => {
+      beaconConfigs.forEach((beacon: { id: string }) => {
         handshakeRefs.current[beacon.id] = {};
-        satelliteData.forEach(sat => {
+        satelliteData.forEach((sat: { OBJECT_NAME: string }) => {
           handshakeRefs.current[beacon.id][sat.OBJECT_NAME] = {
             handshakeCount: 0,
             handshakeDurations: [],
@@ -538,26 +617,22 @@ export default function Earth({
 
     // Always update coveringIridiums based on simulationTime (for handshaking panel sync)
     const allCovering = Array.from(new Set(Object.values(perBeaconCovering).flat()));
-    setCoveringIridiums((prev) => {
-      if (JSON.stringify(prev as string[]) !== JSON.stringify(allCovering)) {
-        return allCovering;
-      }
-      return prev as string[];
-    });
+    setCoveringIridiums(allCovering);
+
     // Update per-beacon coverage for the stats panel
     setCoveringIridiumsByBeacon(perBeaconCovering);
 
-  }, [simulationTime, beaconConfigs, setCoveringIridiums, setCoveringIridiumsByBeacon, timeScale]);
+  }, [simulationTime, beaconConfigs, setCoveringIridiums, setCoveringIridiumsByBeacon, timeScale, satelliteData]);
 
   // Separate effect for stats updates
   useEffect(() => {
     if (!isRunning) return;
 
     // Initialize handshakeRefs for all beacons and satellites
-    beaconConfigs.forEach(beaconConfig => {
+    beaconConfigs.forEach((beaconConfig: { id: string }) => {
       if (!handshakeRefs.current[beaconConfig.id]) {
         handshakeRefs.current[beaconConfig.id] = {};
-        satelliteData.forEach(sat => {
+        satelliteData.forEach((sat: { OBJECT_NAME: string }) => {
           handshakeRefs.current[beaconConfig.id][sat.OBJECT_NAME] = {
             handshakeCount: 0,
             handshakeDurations: [],
@@ -569,7 +644,7 @@ export default function Earth({
     });
 
     // Initialize out-of-coverage refs for all beacons
-    beaconConfigs.forEach(beaconConfig => {
+    beaconConfigs.forEach((beaconConfig: { id: string }) => {
       if (!beaconOutCoverageRefs.current[beaconConfig.id]) {
         beaconOutCoverageRefs.current[beaconConfig.id] = {
           outOfCoverageDurations: [],
@@ -580,9 +655,9 @@ export default function Earth({
     });
 
     // Per-beacon, per-satellite handshake tracking
-    beaconConfigs.forEach(beaconConfig => {
+    beaconConfigs.forEach((beaconConfig: { id: string }) => {
       const beaconId = beaconConfig.id;
-      satelliteData.forEach(sat => {
+      satelliteData.forEach((sat: { OBJECT_NAME: string }) => {
         const satId = sat.OBJECT_NAME;
         const ref = handshakeRefs.current[beaconId][satId];
         const isNowCovered = perBeaconCoveringRef.current[beaconId]?.includes(satId) || false;
@@ -601,7 +676,7 @@ export default function Earth({
     });
 
     // For each beacon, check if it is covered by any satellite
-    beaconConfigs.forEach(beaconConfig => {
+    beaconConfigs.forEach((beaconConfig: { id: string }) => {
       const beaconId = beaconConfig.id;
       const isNowCovered = perBeaconCoveringRef.current[beaconId] && perBeaconCoveringRef.current[beaconId].length > 0;
       const ref = beaconOutCoverageRefs.current[beaconId];
@@ -622,9 +697,9 @@ export default function Earth({
 
     // At the end of the simulation, close any open handshakes
     if (simulationTime >= 86400 || !isRunning) {
-      beaconConfigs.forEach(beaconConfig => {
+      beaconConfigs.forEach((beaconConfig: { id: string }) => {
         const beaconId = beaconConfig.id;
-        satelliteData.forEach(sat => {
+        satelliteData.forEach((sat: { OBJECT_NAME: string }) => {
           const satId = sat.OBJECT_NAME;
           const ref = handshakeRefs.current[beaconId][satId];
           if (ref.isCoveredLast && ref.lastHandshakeStart > 0) {
@@ -639,7 +714,7 @@ export default function Earth({
 
     // At the end of the simulation, close any open out-of-coverage periods
     if (simulationTime >= 86400 || !isRunning) {
-      beaconConfigs.forEach(beaconConfig => {
+      beaconConfigs.forEach((beaconConfig: { id: string }) => {
         const beaconId = beaconConfig.id;
         const ref = beaconOutCoverageRefs.current[beaconId];
         if (ref.isOutOfCoverage && ref.lastOutOfCoverageTime !== null) {
@@ -651,7 +726,7 @@ export default function Earth({
     }
 
     // Aggregate per-beacon stats for the stats panel
-    let perBeaconStats: any[] = beaconConfigs.map(beaconConfig => {
+    let perBeaconStats: any[] = beaconConfigs.map((beaconConfig: { id: string }) => {
       const beaconId = beaconConfig.id;
       const beaconRefs = handshakeRefs.current[beaconId];
       let allDurations: number[] = [];
@@ -699,9 +774,9 @@ export default function Earth({
 
     // Aggregate per-satellite stats for the stats table
     let perSatellite: any[] = [];
-    beaconConfigs.forEach(beaconConfig => {
+    beaconConfigs.forEach((beaconConfig: { id: string }) => {
       const beaconId = beaconConfig.id;
-      satelliteData.forEach(sat => {
+      satelliteData.forEach((sat: { OBJECT_NAME: string }) => {
         const satId = sat.OBJECT_NAME;
         const ref = handshakeRefs.current[beaconId][satId];
         const totalHandshakeTime = ref.handshakeDurations.reduce((a, b) => a + b, 0);
@@ -718,12 +793,19 @@ export default function Earth({
     const newStats = {
       perBeacon: perBeaconStats,
       perSatellite,
+      totalHandshakes: perSatellite.reduce((sum, stat) => sum + stat.count, 0),
+      totalCoverageTime: perBeaconStats.reduce((sum, stat) => sum + stat.totalInCoverageTime, 0),
+      averageCoverageTime: perBeaconStats.reduce((sum, stat) => sum + stat.avgInCoverageTime, 0) / perBeaconStats.length || 0,
+      maxCoverageTime: Math.max(...perBeaconStats.map(stat => stat.totalInCoverageTime), 0),
+      minCoverageTime: Math.min(...perBeaconStats.map(stat => stat.totalInCoverageTime).filter(t => t > 0), 0) || 0,
     };
-    if (!deepEqual(newStats, prevStatsRef.current)) {
+
+    // Only update stats if they've changed significantly
+    if (!prevStatsRef.current || !deepEqual(prevStatsRef.current, newStats)) {
       prevStatsRef.current = newStats;
       setStats(newStats);
     }
-  }, [simulationTime, isRunning, beaconConfigs, timeScale]);
+  }, [simulationTime, isRunning, beaconConfigs, satelliteData, setStats]);
 
   return (
     <div className="w-full h-full">
@@ -752,8 +834,23 @@ export default function Earth({
         
         <Globe simulationTime={simulationTime} />
         
+        {/* Add ConnectionLines component */}
+        <ConnectionLines
+          beaconConfigs={beaconConfigs}
+          satelliteData={satelliteData}
+          simulationTime={simulationTime}
+          coveringIridiumsByBeacon={getCoveringIridiumsByBeacon(simulationTime, beaconConfigs, satelliteData, timeScale)}
+        />
+        
         {/* Render beacons */}
-        {beaconConfigs.map(config => {
+        {beaconConfigs.map((config: {
+          id: string;
+          isSunSync: boolean;
+          lst?: number;
+          altitude: number;
+          color: string;
+          inclination?: number;
+        }) => {
           // LST/RAAN logic for sun-synchronous orbits
           let raanRad = 0;
           if (config.isSunSync && typeof config.lst === 'number') {
@@ -765,6 +862,7 @@ export default function Earth({
           return (
             <Beacon 
               key={config.id}
+              id={config.id}
               altitude={config.altitude}
               color={config.color}
               size={SATELLITE_SIZE/SCALE} 
