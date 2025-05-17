@@ -12,8 +12,6 @@ const earthTexture = '/textures/earth.jpg';
 
 // Global scale factor (1 unit = 1000 km)
 const SCALE = 1000
-// Time scale for animation (higher = faster orbits)
-const TIME_SCALE = 144;
 
 // Original measurements in km
 const EARTH_RADIUS = 6378; // Earth radius in km
@@ -41,6 +39,30 @@ function beaconSpeed(altitude: number) {
   return v;
 }
 
+// Helper to check if beacon is inside satellite's cone
+function isBeaconInCone(beaconPos: THREE.Vector3, satPos: THREE.Vector3, satAltitude: number) {
+  // Cone apex at satPos, axis toward Earth's center (0,0,0)
+  const axis = (new THREE.Vector3(0,0,0)).clone().sub(satPos).normalize();
+  const beaconVec = beaconPos.clone().sub(satPos);
+  // Cone height (from satellite to tangent point on Earth, in scene units)
+  const h = (satAltitude + CONE_HEIGHT_FACTOR) / SCALE;
+  // Project beacon vector onto axis to get height along the cone
+  const heightOnAxis = beaconVec.dot(axis);
+  if (heightOnAxis < 0 || heightOnAxis > h) return false;
+  // Perpendicular (radial) distance from axis
+  const perpendicular = beaconVec.clone().sub(axis.clone().multiplyScalar(heightOnAxis));
+  const radialDist = perpendicular.length();
+  // Allowed radius at this height (cone expands linearly)
+  const allowedRadius = (CONE_RADIUS / h) * heightOnAxis / SCALE; // CONE_RADIUS in km, convert to scene units
+  const inside = radialDist <= allowedRadius;
+  if (inside) {
+    console.log(
+      `Beacon is under a cone: radialDist = ${radialDist.toFixed(4)}, allowedRadius = ${allowedRadius.toFixed(4)}, heightOnAxis = ${heightOnAxis.toFixed(4)}, h = ${h.toFixed(4)}`
+    );
+  }
+  return inside;
+}
+
 function Beacon({
   altitude,
   color, // will be ignored, dynamic color used
@@ -48,10 +70,14 @@ function Beacon({
   inclination = 64,
   sunSynchronous = false,
   lst = 12, // noon by default
-}: BeaconProps) {
+  simulationTime = 0,
+  isRunning = false,
+  satelliteData,
+  timeScale = 1,
+  coveringIridiums = [],
+}: BeaconProps & { simulationTime: number, isRunning: boolean, satelliteData: any[], timeScale: number, coveringIridiums: string[] }) {
   const groupRef = useRef<THREE.Group>(null!);
   const [beaconColor, setBeaconColor] = useState('blue');
-  const time = useRef(0);
   const raanRad = useRef(0);
 
   // Inclination for sun-sync orbits
@@ -60,103 +86,23 @@ function Beacon({
 
   // Compute orbit radius and speed based on altitude (in km)
   const orbitRadius = EARTH_RADIUS + altitude;
-  const speed = beaconSpeed(altitude);
-  const angularSpeed = speed / (orbitRadius * 1000); // radians/sec, both in meters
+  const MU = 398600.4418; // Earth's standard gravitational parameter, km^3/s^2
+  const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
+  const angularSpeed = (2 * Math.PI) / periodSeconds; // radians/sec
 
-  // Helper to get satellite position in world coordinates
-  function getSatelliteWorldPosition(sat: any, t: number) {
-    // Orbital parameters
-    const satAltitude = sat.altitude;
-    const satOrbitRadius = (EARTH_RADIUS + satAltitude) / SCALE;
-    const periodSeconds = sat.period * 3600;
-    const satSpeed = (2 * Math.PI) / (periodSeconds / TIME_SCALE);
-    const inclinationRad = (sat.INCLINATION * Math.PI) / 180;
-    const raanRad = (sat.RA_OF_ASC_NODE * Math.PI) / 180;
-    const argPericenterRad = (sat.ARG_OF_PERICENTER * Math.PI) / 180;
-    const meanAnomalyRad = (sat.MEAN_ANOMALY * Math.PI) / 180;
-    const now = new Date();
-    const epochDate = new Date(sat.EPOCH);
-    const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
-    const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
-    const phase = t + meanAnomalyRad + phaseOffset;
-    // Local orbit position
-    const x = Math.cos(phase) * satOrbitRadius;
-    const z = Math.sin(phase) * satOrbitRadius;
-    const y = 0;
-    // Apply orbit plane rotation: RAAN (Y), inclination (X), arg of pericenter (Y)
-    const pos = new THREE.Vector3(x, y, z);
-    const m = new THREE.Matrix4();
-    m.makeRotationY(raanRad)
-      .multiply(new THREE.Matrix4().makeRotationX(inclinationRad))
-      .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
-    pos.applyMatrix4(m);
-    return pos;
-  }
-
-  // Helper to get beacon world position
-  function getBeaconWorldPosition(t: number) {
-    const x = Math.cos(t) * (orbitRadius / SCALE);
-    const z = Math.sin(t) * (orbitRadius / SCALE);
-    return new THREE.Vector3(x, 0, z);
-  }
-
-  // Helper to check if beacon is inside satellite's cone
-  function isBeaconInCone(beaconPos: THREE.Vector3, satPos: THREE.Vector3, satAltitude: number) {
-    // Cone apex at satPos, axis toward Earth's center (0,0,0)
-    const axis = (new THREE.Vector3(0,0,0)).clone().sub(satPos).normalize();
-    const beaconVec = beaconPos.clone().sub(satPos);
-    // Cone height (from satellite to tangent point on Earth, in scene units)
-    const h = (satAltitude + CONE_HEIGHT_FACTOR) / SCALE;
-    // Project beacon vector onto axis to get height along the cone
-    const heightOnAxis = beaconVec.dot(axis);
-    if (heightOnAxis < 0 || heightOnAxis > h) return false;
-    // Perpendicular (radial) distance from axis
-    const perpendicular = beaconVec.clone().sub(axis.clone().multiplyScalar(heightOnAxis));
-    const radialDist = perpendicular.length();
-    // Allowed radius at this height (cone expands linearly)
-    const allowedRadius = (CONE_RADIUS / h) * heightOnAxis / SCALE; // CONE_RADIUS in km, convert to scene units
-    const inside = radialDist <= allowedRadius;
-    if (inside) {
-      console.log(
-        `Beacon is under a cone: radialDist = ${radialDist.toFixed(4)}, allowedRadius = ${allowedRadius.toFixed(4)}, heightOnAxis = ${heightOnAxis.toFixed(4)}, h = ${h.toFixed(4)}`
-      );
-    }
-    return inside;
-  }
-
-  useFrame((state, delta) => { 
+  // Animation uses simulationTime for perfect sync
+  useFrame(() => {
     if (groupRef.current) {
-      time.current += angularSpeed * delta * TIME_SCALE;
-      // Calculate position on the orbit
-      const x = Math.cos(time.current) * (orbitRadius / SCALE);
-      const z = Math.sin(time.current) * (orbitRadius / SCALE);
+      const t = angularSpeed * simulationTime;
+      const x = Math.cos(t) * (orbitRadius / SCALE);
+      const z = Math.sin(t) * (orbitRadius / SCALE);
       groupRef.current.position.set(x, 0, z);
       // Calculate tangent direction (derivative of the orbit)
-      const tangentX = -Math.sin(time.current);
-      const tangentZ = Math.cos(time.current);
-      // Set rotation to face the tangent direction
+      const tangentX = -Math.sin(t);
+      const tangentZ = Math.cos(t);
       groupRef.current.rotation.y = Math.atan2(tangentX, tangentZ);
-
-      // --- Coverage check logic ---
-      const beaconPos = getBeaconWorldPosition(time.current);
-      let covered = false;
-      for (let sat of satelliteData) {
-        const satPos = getSatelliteWorldPosition(sat, time.current);
-        if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
-          covered = true;
-          break;
-        }
-      }
-      setBeaconColor(covered ? 'blue' : 'red');
-
-      // Use simulated time of day (scaled by TIME_SCALE) for sun-synchronous RAAN
-      const elapsed = state.clock.getElapsedTime() * TIME_SCALE;
-      // Sun's longitude (radians): 0 at midnight, increases with Earth's rotation
-      const sunLongitude = (elapsed * (2 * Math.PI) / 86400) % (2 * Math.PI);
-      // LST to longitude: LST (in hours) -> angle (radians)
-      const lstAngle = ((lst / 24) * 2 * Math.PI) % (2 * Math.PI);
-      // RAAN: for sun-sync, set so that the descending node is at the longitude where the sun is at LST
-      raanRad.current = sunSynchronous ? (sunLongitude - lstAngle + Math.PI / 2) : 0;
+      // Set color based on coveringIridiums
+      setBeaconColor(coveringIridiums.length > 0 ? 'blue' : 'red');
     }
   });
 
@@ -202,17 +148,15 @@ interface SatelliteProps {
   };
 }
 
-function Satellite({ data }: SatelliteProps) {
+function Satellite({ data, simulationTime }: SatelliteProps & { simulationTime: number }) {
   const satelliteRef = useRef<THREE.Group>(null!);
-  const time = useRef(0);
   const [hovered, setHovered] = useState(false);
 
   // Orbital parameters
   const altitude = data.altitude;
   const orbitRadius = (EARTH_RADIUS + altitude)  / SCALE;
-  // Use period (hours) to set speed
   const periodSeconds = data.period * 3600; // convert hours to seconds
-  const speed = (2 * Math.PI) / (periodSeconds / TIME_SCALE); // radians per second
+  const speed = (2 * Math.PI) / (periodSeconds); // radians per second
   const inclinationRad = (data.INCLINATION * Math.PI) / 180;
   const raanRad = (data.RA_OF_ASC_NODE * Math.PI) / 180;
   const argPericenterRad = (data.ARG_OF_PERICENTER * Math.PI) / 180;
@@ -221,14 +165,12 @@ function Satellite({ data }: SatelliteProps) {
   // Calculate phase offset from epoch
   const now = new Date();
   const epochDate = new Date(data.EPOCH);
-  const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000; // seconds
+  const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
   const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
 
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (satelliteRef.current) {
-      time.current += speed * delta;
-      // Satellite position in its local orbit plane (XZ)
-      const phase = time.current + meanAnomalyRad + phaseOffset;
+      const phase = speed * simulationTime + meanAnomalyRad + phaseOffset;
       const x = Math.cos(phase) * orbitRadius;
       const z = Math.sin(phase) * orbitRadius;
       satelliteRef.current.position.set(x, 0, z);
@@ -295,16 +237,13 @@ function OrbitRing({ radius }: { radius: number }) {
   );
 }
 
-function Globe() {
+function Globe({ simulationTime }: { simulationTime: number }) {
   const meshRef = useRef<THREE.Mesh>(null!);
   const texture = useLoader(THREE.TextureLoader, earthTexture);
 
-  // Earth rotates 360° in 86400 seconds (24 hours)
-  const earthRotationSpeed = (2 * Math.PI) / 86400 * TIME_SCALE; // radians per second
-
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += earthRotationSpeed * delta;
+      meshRef.current.rotation.y = (2 * Math.PI) * (simulationTime / 86400);
     }
   });
 
@@ -339,10 +278,119 @@ function Sun() {
   );
 }
 
-export default function Earth() {
+export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = false, stats, setStats, coveringIridiums, setCoveringIridiums }: { simulationTime?: number, timeScale?: number, isRunning?: boolean, stats: any, setStats: any, coveringIridiums: string[], setCoveringIridiums: (ids: string[]) => void }) {
   // Use a typical altitude for the ring, or the first satellite's altitude if available
   const ringAltitude = satelliteData[0]?.altitude || 780;
   const ringRadius = (EARTH_RADIUS + ringAltitude) / SCALE;
+
+  // Handshake tracking refs
+  const handshakeRefs = useRef(satelliteData.map(sat => ({
+    id: sat.OBJECT_NAME,
+    isCoveredLast: false,
+    lastHandshakeStart: 0,
+    handshakeDurations: [] as number[],
+    handshakeCount: 0,
+  })));
+  const lastOutOfCoverageTime = useRef<number | null>(null);
+  const outOfCoverageDurations = useRef<number[]>([]);
+
+  useEffect(() => {
+    // Reset all tracking refs/arrays when simulation starts
+    if (simulationTime === 0) {
+      handshakeRefs.current = satelliteData.map(sat => ({
+        id: sat.OBJECT_NAME,
+        isCoveredLast: false,
+        lastHandshakeStart: 0,
+        handshakeDurations: [] as number[],
+        handshakeCount: 0,
+      }));
+      lastOutOfCoverageTime.current = null;
+      outOfCoverageDurations.current = [];
+    }
+    if (!isRunning) return;
+    // Calculate beacon position
+    const beaconAltitude = 20; // match the Beacon's altitude prop
+    const orbitRadius = EARTH_RADIUS + beaconAltitude;
+    const MU = 398600.4418;
+    const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
+    const angularSpeed = (2 * Math.PI) / periodSeconds;
+    const t = angularSpeed * simulationTime;
+    const x = Math.cos(t) * (orbitRadius / SCALE);
+    const z = Math.sin(t) * (orbitRadius / SCALE);
+    const beaconPos = new THREE.Vector3(x, 0, z);
+    // Coverage check
+    let coveredBy: string[] = [];
+    satelliteData.forEach((sat, idx) => {
+      // Satellite position at simulationTime
+      const satOrbitRadius = (EARTH_RADIUS + sat.altitude) / SCALE;
+      const periodSeconds = sat.period * 3600;
+      const speed = (2 * Math.PI) / (periodSeconds);
+      const inclinationRad = (sat.INCLINATION * Math.PI) / 180;
+      const raanRad = (sat.RA_OF_ASC_NODE * Math.PI) / 180;
+      const argPericenterRad = (sat.ARG_OF_PERICENTER * Math.PI) / 180;
+      const meanAnomalyRad = (sat.MEAN_ANOMALY * Math.PI) / 180;
+      const now = new Date();
+      const epochDate = new Date(sat.EPOCH);
+      const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
+      const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
+      const phase = speed * simulationTime + meanAnomalyRad + phaseOffset;
+      const sx = Math.cos(phase) * satOrbitRadius;
+      const sz = Math.sin(phase) * satOrbitRadius;
+      const sy = 0;
+      const satPos = new THREE.Vector3(sx, sy, sz);
+      const m = new THREE.Matrix4();
+      m.makeRotationY(raanRad)
+        .multiply(new THREE.Matrix4().makeRotationX(inclinationRad))
+        .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
+      satPos.applyMatrix4(m);
+      if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
+        coveredBy.push(sat.OBJECT_NAME); // or sat.NORAD_CAT_ID
+      }
+    });
+    setCoveringIridiums(coveredBy);
+    // Per-satellite handshake logic
+    let totalHandshakes = 0;
+    handshakeRefs.current.forEach((ref, idx) => {
+      const isNowCovered = coveredBy.includes(ref.id);
+      if (!ref.isCoveredLast && isNowCovered) {
+        // Handshake started
+        ref.handshakeCount++;
+        ref.lastHandshakeStart = simulationTime;
+      }
+      if (ref.isCoveredLast && !isNowCovered) {
+        // Handshake ended
+        const duration = simulationTime - ref.lastHandshakeStart;
+        if (ref.lastHandshakeStart > 0) ref.handshakeDurations.push(duration);
+      }
+      ref.isCoveredLast = isNowCovered;
+      totalHandshakes += ref.handshakeCount;
+    });
+    // Out of coverage tracking
+    if (coveredBy.length === 0) {
+      if (lastOutOfCoverageTime.current === null) {
+        lastOutOfCoverageTime.current = simulationTime;
+      }
+    } else {
+      if (lastOutOfCoverageTime.current !== null) {
+        outOfCoverageDurations.current.push(simulationTime - lastOutOfCoverageTime.current);
+        lastOutOfCoverageTime.current = null;
+      }
+    }
+    // Update stats for display
+    const totalOutOfCoverageTime = outOfCoverageDurations.current.reduce((a, b) => a + b, 0);
+    const avgOutOfCoverageTime = outOfCoverageDurations.current.length > 0 ? totalOutOfCoverageTime / outOfCoverageDurations.current.length : 0;
+    setStats({
+      totalHandshakes,
+      totalOutOfCoverageTime,
+      avgOutOfCoverageTime,
+      perSatellite: handshakeRefs.current.map(ref => ({
+        id: ref.id,
+        count: ref.handshakeCount,
+        durations: ref.handshakeDurations,
+        total: ref.handshakeDurations.reduce((a, b) => a + b, 0),
+      })),
+    });
+  }, [simulationTime, isRunning]);
 
   return (
     <div className="w-full h-full">
@@ -361,8 +409,6 @@ export default function Earth() {
           fade={false}
           speed={0.5}
         />
-        {/* Red static ring for satellite orbit */}
-        <OrbitRing radius={ringRadius} />
         {/* Enhanced lighting for better texture visibility */}
         <ambientLight intensity={1.0} color="#1a1a2e" />
         <pointLight position={[10, 10, 10]} intensity={5.0} color="#ffffff" />
@@ -371,7 +417,7 @@ export default function Earth() {
         {/* Dynamic Sun for day/night */}
         <Sun />
         
-        <Globe />
+        <Globe simulationTime={simulationTime} />
         {/* Beacons */}
         {/* <Beacon 
           altitude={600}
@@ -381,11 +427,16 @@ export default function Earth() {
           sunSynchronous={false}
         /> */}
         <Beacon 
-          altitude={150}
+          altitude={20}
           color="blue" 
           size={SATELLITE_SIZE/SCALE} 
           sunSynchronous={true}
           lst={12.0} // 10:00am
+          simulationTime={simulationTime}
+          isRunning={isRunning}
+          satelliteData={satelliteData}
+          timeScale={timeScale}
+          coveringIridiums={coveringIridiums}
         />
         {/* <Beacon 
           altitude={600}
@@ -399,6 +450,7 @@ export default function Earth() {
           <Satellite 
             key={satellite.NORAD_CAT_ID} 
             data={satellite}
+            simulationTime={simulationTime}
           />
         ))}
         <OrbitControls enableZoom={false} enablePan={false} />
