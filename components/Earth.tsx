@@ -648,7 +648,7 @@ export default function Earth({
       if (!beaconOutCoverageRefs.current[beaconConfig.id]) {
         beaconOutCoverageRefs.current[beaconConfig.id] = {
           outOfCoverageDurations: [],
-          lastOutOfCoverageTime: 0,
+          lastOutOfCoverageTime: simulationTime, // Start from current simulation time
           isOutOfCoverage: true,
         };
       }
@@ -661,6 +661,17 @@ export default function Earth({
         const satId = sat.OBJECT_NAME;
         const ref = handshakeRefs.current[beaconId][satId];
         const isNowCovered = perBeaconCoveringRef.current[beaconId]?.includes(satId) || false;
+        
+        // Initialize if not exists
+        if (!ref) {
+          handshakeRefs.current[beaconId][satId] = {
+            handshakeCount: 0,
+            handshakeDurations: [],
+            isCoveredLast: false,
+            lastHandshakeStart: 0,
+          };
+        }
+
         if (isNowCovered && !ref.isCoveredLast) {
           // Handshake started
           ref.handshakeCount++;
@@ -669,7 +680,9 @@ export default function Earth({
         if (!isNowCovered && ref.isCoveredLast) {
           // Handshake ended
           const duration = simulationTime - ref.lastHandshakeStart;
-          if (ref.lastHandshakeStart > 0) ref.handshakeDurations.push(duration);
+          if (ref.lastHandshakeStart > 0 && duration > 0) {
+            ref.handshakeDurations.push(duration);
+          }
         }
         ref.isCoveredLast = isNowCovered;
       });
@@ -680,6 +693,16 @@ export default function Earth({
       const beaconId = beaconConfig.id;
       const isNowCovered = perBeaconCoveringRef.current[beaconId] && perBeaconCoveringRef.current[beaconId].length > 0;
       const ref = beaconOutCoverageRefs.current[beaconId];
+      
+      // Initialize if not exists
+      if (!ref) {
+        beaconOutCoverageRefs.current[beaconId] = {
+          outOfCoverageDurations: [],
+          lastOutOfCoverageTime: simulationTime,
+          isOutOfCoverage: true,
+        };
+      }
+
       if (!isNowCovered && !ref.isOutOfCoverage) {
         // Just entered out-of-coverage
         ref.lastOutOfCoverageTime = simulationTime;
@@ -688,7 +711,9 @@ export default function Earth({
         // Just left out-of-coverage
         if (ref.lastOutOfCoverageTime !== null) {
           const duration = simulationTime - ref.lastOutOfCoverageTime;
-          ref.outOfCoverageDurations.push(duration);
+          if (duration > 0) {
+            ref.outOfCoverageDurations.push(duration);
+          }
         }
         ref.lastOutOfCoverageTime = null;
         ref.isOutOfCoverage = false;
@@ -704,7 +729,9 @@ export default function Earth({
           const ref = handshakeRefs.current[beaconId][satId];
           if (ref.isCoveredLast && ref.lastHandshakeStart > 0) {
             const duration = Math.min(simulationTime, 86400) - ref.lastHandshakeStart;
-            ref.handshakeDurations.push(duration);
+            if (duration > 0) {
+              ref.handshakeDurations.push(duration);
+            }
             ref.isCoveredLast = false;
             ref.lastHandshakeStart = 0;
           }
@@ -719,7 +746,9 @@ export default function Earth({
         const ref = beaconOutCoverageRefs.current[beaconId];
         if (ref.isOutOfCoverage && ref.lastOutOfCoverageTime !== null) {
           const duration = Math.min(simulationTime, 86400) - ref.lastOutOfCoverageTime;
-          ref.outOfCoverageDurations.push(duration);
+          if (duration > 0) {
+            ref.outOfCoverageDurations.push(duration);
+          }
           ref.lastOutOfCoverageTime = null;
         }
       });
@@ -731,8 +760,11 @@ export default function Earth({
       const beaconRefs = handshakeRefs.current[beaconId];
       let allDurations: number[] = [];
       let totalHandshakes = 0;
+      
+      // Collect all handshake durations
       Object.values(beaconRefs).forEach(ref => {
-        allDurations = allDurations.concat(ref.handshakeDurations);
+        const validDurations = ref.handshakeDurations.filter(d => d > 0);
+        allDurations = allDurations.concat(validDurations);
         totalHandshakes += ref.handshakeCount;
       });
       
@@ -741,26 +773,34 @@ export default function Earth({
       
       // Out-of-coverage aggregation
       const outRef = beaconOutCoverageRefs.current[beaconId];
-      const totalOutOfCoverageTime = outRef.outOfCoverageDurations.reduce((a, b) => a + b, 0);
+      const validOutDurations = outRef.outOfCoverageDurations.filter(d => d > 0);
+      const totalOutOfCoverageTime = validOutDurations.reduce((a, b) => a + b, 0);
       
-      // Calculate averages based on the number of periods
-      const avgOutOfCoverageTime = outRef.outOfCoverageDurations.length > 0 
-        ? totalOutOfCoverageTime / outRef.outOfCoverageDurations.length 
-        : 0;
-      const avgInCoverageTime = allDurations.length > 0 
-        ? totalInCoverageTime / allDurations.length 
-        : 0;
-
-      // If total time exceeds 24 hours, scale both times proportionally
-      const totalTime = totalInCoverageTime + totalOutOfCoverageTime;
+      // Calculate the actual total time elapsed in the simulation
+      const totalSimulationTime = Math.min(simulationTime, 86400);
+      
+      // Ensure total times don't exceed simulation time
+      const totalAccountedTime = totalInCoverageTime + totalOutOfCoverageTime;
       let finalInCoverageTime = totalInCoverageTime;
       let finalOutOfCoverageTime = totalOutOfCoverageTime;
       
-      if (totalTime > 86400) {
-        const scale = 86400 / totalTime;
-        finalInCoverageTime = totalInCoverageTime * scale;
-        finalOutOfCoverageTime = totalOutOfCoverageTime * scale;
+      if (totalAccountedTime > totalSimulationTime) {
+        // Scale down both times proportionally to fit within simulation time
+        const scale = totalSimulationTime / totalAccountedTime;
+        finalInCoverageTime *= scale;
+        finalOutOfCoverageTime *= scale;
+      } else if (totalAccountedTime < totalSimulationTime) {
+        // Add remaining time to out-of-coverage (since that's the default state)
+        finalOutOfCoverageTime += (totalSimulationTime - totalAccountedTime);
       }
+      
+      // Calculate averages based on the number of periods
+      const avgOutOfCoverageTime = validOutDurations.length > 0 
+        ? finalOutOfCoverageTime / validOutDurations.length 
+        : 0;
+      const avgInCoverageTime = allDurations.length > 0 
+        ? finalInCoverageTime / allDurations.length 
+        : 0;
 
       return {
         beaconId,
