@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import HandshakeStatsPanel from "@/components/HandshakeStatsPanel";
 
 // How many seconds of simulation time pass per real second
-const DEFAULT_TIME_SCALE = 1440; // 24 hours (86400s) / 1 minute (60s) = 1440 seconds per second
+const DEFAULT_TIME_SCALE = 1440*2*3*2; // 24 hours (86400s) / 1 minute (60s) = 1440 seconds per second
 const SIM_DURATION = 86400; // 24h in seconds
 
 const initialStats = {

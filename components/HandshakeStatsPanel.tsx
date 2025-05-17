@@ -137,6 +137,8 @@ export default function HandshakeStatsPanel({
         <div>Total handshakes: {stats.totalHandshakes}</div>
         <div>Total out-of-coverage time: {stats.totalOutOfCoverageTime.toFixed(2)} s</div>
         <div>Average out-of-coverage time: {stats.avgOutOfCoverageTime.toFixed(2)} s</div>
+        <div>Total in-coverage time: {stats.totalInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
+        <div>Average in-coverage time: {stats.avgInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
         <hr style={{margin: '8px 0'}} />
         <div style={{maxHeight: '200px', overflowY: 'auto'}}>
           <table style={{width: '100%', color: 'white'}}>
@@ -164,6 +166,8 @@ export default function HandshakeStatsPanel({
             <div><b>Total handshakes:</b> {stats.totalHandshakes}</div>
             <div><b>Total out-of-coverage time:</b> {stats.totalOutOfCoverageTime.toFixed(2)} s</div>
             <div><b>Average out-of-coverage time:</b> {stats.avgOutOfCoverageTime.toFixed(2)} s</div>
+            <div><b>Total in-coverage time:</b> {stats.totalInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
+            <div><b>Average in-coverage time:</b> {stats.avgInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
           </div>
         )}
       </div>

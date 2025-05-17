@@ -293,6 +293,10 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
   })));
   const lastOutOfCoverageTime = useRef<number | null>(null);
   const outOfCoverageDurations = useRef<number[]>([]);
+  // Add in-coverage tracking
+  const lastInCoverageTime = useRef<number | null>(null);
+  const inCoverageDurations = useRef<number[]>([]);
+  const isInCoverage = useRef<boolean>(false);
 
   useEffect(() => {
     // Reset all tracking refs/arrays when simulation starts
@@ -306,8 +310,12 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
       }));
       lastOutOfCoverageTime.current = null;
       outOfCoverageDurations.current = [];
+      lastInCoverageTime.current = null;
+      inCoverageDurations.current = [];
+      isInCoverage.current = false;
     }
     if (!isRunning) return;
+
     // Calculate beacon position
     const beaconAltitude = 20; // match the Beacon's altitude prop
     const orbitRadius = EARTH_RADIUS + beaconAltitude;
@@ -318,6 +326,7 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
     const x = Math.cos(t) * (orbitRadius / SCALE);
     const z = Math.sin(t) * (orbitRadius / SCALE);
     const beaconPos = new THREE.Vector3(x, 0, z);
+
     // Coverage check
     let coveredBy: string[] = [];
     satelliteData.forEach((sat, idx) => {
@@ -344,10 +353,53 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
         .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
       satPos.applyMatrix4(m);
       if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
-        coveredBy.push(sat.OBJECT_NAME); // or sat.NORAD_CAT_ID
+        coveredBy.push(sat.OBJECT_NAME);
       }
     });
     setCoveringIridiums(coveredBy);
+
+    // Track in/out of coverage based on whether ANY satellite is covering
+    const isNowInCoverage = coveredBy.length > 0;
+
+    // Handle the final period first if we're at the end
+    if (simulationTime >= 86400 || !isRunning) {
+      if (isInCoverage.current && lastInCoverageTime.current !== null) {
+        const finalPeriod = simulationTime - lastInCoverageTime.current;
+        inCoverageDurations.current.push(finalPeriod);
+        console.log(`Final in-coverage period: ${finalPeriod.toFixed(2)}s`);
+        lastInCoverageTime.current = null;
+      } else if (!isInCoverage.current && lastOutOfCoverageTime.current !== null) {
+        const finalPeriod = simulationTime - lastOutOfCoverageTime.current;
+        outOfCoverageDurations.current.push(finalPeriod);
+        console.log(`Final out-of-coverage period: ${finalPeriod.toFixed(2)}s`);
+        lastOutOfCoverageTime.current = null;
+      }
+      isInCoverage.current = false;
+    } else {
+      // Normal coverage tracking
+      if (isNowInCoverage && !isInCoverage.current) {
+        // Just entered coverage
+        if (lastOutOfCoverageTime.current !== null) {
+          const outPeriod = simulationTime - lastOutOfCoverageTime.current;
+          outOfCoverageDurations.current.push(outPeriod);
+          console.log(`Out-of-coverage period: ${outPeriod.toFixed(2)}s`);
+          lastOutOfCoverageTime.current = null;
+        }
+        lastInCoverageTime.current = simulationTime;
+        isInCoverage.current = true;
+      } else if (!isNowInCoverage && isInCoverage.current) {
+        // Just left coverage
+        if (lastInCoverageTime.current !== null) {
+          const inPeriod = simulationTime - lastInCoverageTime.current;
+          inCoverageDurations.current.push(inPeriod);
+          console.log(`In-coverage period: ${inPeriod.toFixed(2)}s`);
+          lastInCoverageTime.current = null;
+        }
+        lastOutOfCoverageTime.current = simulationTime;
+        isInCoverage.current = false;
+      }
+    }
+
     // Per-satellite handshake logic
     let totalHandshakes = 0;
     handshakeRefs.current.forEach((ref, idx) => {
@@ -365,24 +417,35 @@ export default function Earth({ simulationTime = 0, timeScale = 48, isRunning = 
       ref.isCoveredLast = isNowCovered;
       totalHandshakes += ref.handshakeCount;
     });
-    // Out of coverage tracking
-    if (coveredBy.length === 0) {
-      if (lastOutOfCoverageTime.current === null) {
-        lastOutOfCoverageTime.current = simulationTime;
-      }
-    } else {
-      if (lastOutOfCoverageTime.current !== null) {
-        outOfCoverageDurations.current.push(simulationTime - lastOutOfCoverageTime.current);
-        lastOutOfCoverageTime.current = null;
-      }
-    }
+
     // Update stats for display
     const totalOutOfCoverageTime = outOfCoverageDurations.current.reduce((a, b) => a + b, 0);
     const avgOutOfCoverageTime = outOfCoverageDurations.current.length > 0 ? totalOutOfCoverageTime / outOfCoverageDurations.current.length : 0;
+    
+    // In-coverage stats
+    const totalInCoverageTime = inCoverageDurations.current.reduce((a, b) => a + b, 0);
+    const avgInCoverageTime = inCoverageDurations.current.length > 0 ? totalInCoverageTime / inCoverageDurations.current.length : 0;
+
+    // Verify total coverage time equals simulation time
+    const totalCoverageTime = totalInCoverageTime + totalOutOfCoverageTime;
+    if (Math.abs(totalCoverageTime - 86400) > 0.01) { // Allow for small floating point errors
+      console.warn(`Coverage time mismatch: ${totalCoverageTime.toFixed(2)} != 86400`);
+      console.log('In-coverage periods:', inCoverageDurations.current.map(t => t.toFixed(2)));
+      console.log('Out-of-coverage periods:', outOfCoverageDurations.current.map(t => t.toFixed(2)));
+      console.log('Current state:', {
+        isInCoverage: isInCoverage.current,
+        lastInCoverageTime: lastInCoverageTime.current,
+        lastOutOfCoverageTime: lastOutOfCoverageTime.current,
+        simulationTime
+      });
+    }
+
     setStats({
       totalHandshakes,
       totalOutOfCoverageTime,
       avgOutOfCoverageTime,
+      totalInCoverageTime,
+      avgInCoverageTime,
       perSatellite: handshakeRefs.current.map(ref => ({
         id: ref.id,
         count: ref.handshakeCount,
