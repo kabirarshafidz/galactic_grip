@@ -52,6 +52,7 @@ function Beacon({
   const groupRef = useRef<THREE.Group>(null!);
   const [beaconColor, setBeaconColor] = useState('blue');
   const time = useRef(0);
+  const raanRad = useRef(0);
 
   // Inclination for sun-sync orbits
   const inclinationDeg = sunSynchronous ? 97.5 : inclination;
@@ -147,33 +148,21 @@ function Beacon({
         }
       }
       setBeaconColor(covered ? 'blue' : 'red');
+
+      // Use simulated time of day (scaled by TIME_SCALE) for sun-synchronous RAAN
+      const elapsed = state.clock.getElapsedTime() * TIME_SCALE;
+      // Sun's longitude (radians): 0 at midnight, increases with Earth's rotation
+      const sunLongitude = (elapsed * (2 * Math.PI) / 86400) % (2 * Math.PI);
+      // LST to longitude: LST (in hours) -> angle (radians)
+      const lstAngle = ((lst / 24) * 2 * Math.PI) % (2 * Math.PI);
+      // RAAN: for sun-sync, set so that the descending node is at the longitude where the sun is at LST
+      raanRad.current = sunSynchronous ? (sunLongitude - lstAngle + Math.PI / 2) : 0;
     }
   });
 
-  // Use simulated time of day (scaled by TIME_SCALE) for sun-synchronous RAAN
-  // Get elapsed simulated seconds
-  const getElapsedSimSeconds = () => {
-    if (typeof window !== 'undefined' && window.__R3F_ROOTS) {
-      // Try to get the clock from the first root (Canvas)
-      const roots = window.__R3F_ROOTS;
-      const root = Object.values(roots)[0];
-      if (root && root.store && root.store.getState) {
-        return root.store.getState().clock.getElapsedTime() * TIME_SCALE;
-      }
-    }
-    return 0;
-  };
-  const elapsed = getElapsedSimSeconds();
-  // Sun's longitude (radians): 0 at midnight, increases with Earth's rotation
-  const sunLongitude = (elapsed * (2 * Math.PI) / 86400) % (2 * Math.PI);
-  // LST to longitude: LST (in hours) -> angle (radians)
-  const lstAngle = ((lst / 24) * 2 * Math.PI) % (2 * Math.PI);
-  // RAAN: for sun-sync, set so that the descending node is at the longitude where the sun is at LST
-  const raanRad = sunSynchronous ? (sunLongitude - lstAngle + Math.PI / 2) : 0;
-
   // Compose the orbit plane rotation: RAAN (Y), inclination (X)
   return (
-    <group rotation={[0, raanRad, 0]}>
+    <group rotation={[0, raanRad.current, 0]}>
       <group rotation={[inclinationRad, 0, 0]}>
         <group ref={groupRef}>
           {/* Main beacon */}
