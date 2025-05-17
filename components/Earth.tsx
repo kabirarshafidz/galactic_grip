@@ -54,13 +54,7 @@ function isBeaconInCone(beaconPos: THREE.Vector3, satPos: THREE.Vector3, satAlti
   const radialDist = perpendicular.length();
   // Allowed radius at this height (cone expands linearly)
   const allowedRadius = (CONE_RADIUS / h) * heightOnAxis / SCALE; // CONE_RADIUS in km, convert to scene units
-  const inside = radialDist <= allowedRadius;
-  if (inside) {
-    console.log(
-      `Beacon is under a cone: radialDist = ${radialDist.toFixed(4)}, allowedRadius = ${allowedRadius.toFixed(4)}, heightOnAxis = ${heightOnAxis.toFixed(4)}, h = ${h.toFixed(4)}`
-    );
-  }
-  return inside;
+  return radialDist <= allowedRadius;
 }
 
 function Beacon({
@@ -75,10 +69,9 @@ function Beacon({
   satelliteData,
   timeScale = 1,
   coveringIridiums = [],
-}: BeaconProps & { simulationTime: number, isRunning: boolean, satelliteData: any[], timeScale: number, coveringIridiums: string[] }) {
+  raanRad = 0,
+}: BeaconProps & { simulationTime: number, isRunning: boolean, satelliteData: any[], timeScale: number, coveringIridiums: string[], raanRad: number }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const [beaconColor, setBeaconColor] = useState('blue');
-  const [raanRad, setRaanRad] = useState(0);
 
   // Inclination for sun-sync orbits
   const inclinationDeg = sunSynchronous ? 97.5 : inclination;
@@ -89,18 +82,6 @@ function Beacon({
   const MU = 398600.4418; // Earth's standard gravitational parameter, km^3/s^2
   const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
   const angularSpeed = (2 * Math.PI) / periodSeconds; // radians/sec
-
-  // Calculate RAAN based on LST for sun-synchronous orbits
-  useEffect(() => {
-    if (sunSynchronous) {
-      // Convert LST to radians (24 hours = 2π radians)
-      const lstRad = (lst * Math.PI) / 12;
-      // For sun-synchronous orbits, RAAN is related to LST
-      // RAAN = LST - π/2 (to align with the sun)
-      const newRaanRad = lstRad - Math.PI / 2;
-      setRaanRad(newRaanRad);
-    }
-  }, [lst, sunSynchronous]);
 
   // Animation uses simulationTime for perfect sync
   useFrame(() => {
@@ -113,8 +94,6 @@ function Beacon({
       const tangentX = -Math.sin(t);
       const tangentZ = Math.cos(t);
       groupRef.current.rotation.y = Math.atan2(tangentX, tangentZ);
-      // Set color based on coveringIridiums
-      setBeaconColor(coveringIridiums.length > 0 ? 'blue' : 'red');
     }
   });
 
@@ -122,21 +101,16 @@ function Beacon({
   return (
     <group rotation={[0, raanRad, 0]}>
       <group rotation={[inclinationRad, 0, 0]}>
+        {/* Orbit Ring */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[orbitRadius / SCALE, 0.02, 16, 128]} />
+          <meshBasicMaterial color={color} transparent opacity={coveringIridiums.length > 0 ? 0.8 : 0.3} />
+        </mesh>
         <group ref={groupRef}>
           {/* Main beacon */}
           <Sphere args={[size, 16, 16]}>
-            <meshBasicMaterial color={beaconColor} />
+            <meshBasicMaterial color={color} transparent opacity={coveringIridiums.length > 0 ? 1 : 0.5} />
           </Sphere>
-          {/* Forward beam (tangent direction) */}
-          <mesh position={[0, 0, -size * 2]} rotation={[1.5, 0, 0]}>
-            <coneGeometry args={[size * 2, size * 2, 24]} />
-            <meshBasicMaterial color={beaconColor} transparent opacity={0.5} />
-          </mesh>
-          {/* Backward beam (opposite tangent) */}
-          <mesh position={[0, 0, size * 2]} rotation={[-1.5, 0, 0]}>
-            <coneGeometry args={[size * 2, size * 2, 24]} />
-            <meshBasicMaterial color={beaconColor} transparent opacity={0.5} />
-          </mesh>
         </group>
       </group>
     </group>
@@ -297,77 +271,41 @@ interface EarthProps {
   stats: any;
   setStats: any;
   coveringIridiums: string[];
-  setCoveringIridiums: (ids: string[]) => void;
-  orbitConfig: {
+  setCoveringIridiums: React.Dispatch<React.SetStateAction<string[]>>;
+  setCoveringIridiumsByBeacon: (obj: { [beaconId: string]: string[] }) => void;
+  beaconConfigs: Array<{
+    id: string;
     isSunSync: boolean;
     altitude: number;
-    lst: number;
-    inclination: number;
-  };
+    lst?: number;
+    inclination?: number;
+    color: string;
+    timeScale?: number;
+  }>;
+  selectedBeaconId?: string;
 }
 
-export default function Earth({ 
-  simulationTime = 0, 
-  timeScale = 48, 
-  isRunning = false, 
-  stats, 
-  setStats, 
-  coveringIridiums, 
-  setCoveringIridiums,
-  orbitConfig
-}: EarthProps) {
-  // Use a typical altitude for the ring, or the first satellite's altitude if available
-  const ringAltitude = satelliteData[0]?.altitude || 780;
-  const ringRadius = (EARTH_RADIUS + ringAltitude) / SCALE;
-
-  // Handshake tracking refs
-  const handshakeRefs = useRef(satelliteData.map(sat => ({
-    id: sat.OBJECT_NAME,
-    isCoveredLast: false,
-    lastHandshakeStart: 0,
-    handshakeDurations: [] as number[],
-    handshakeCount: 0,
-  })));
-  const lastOutOfCoverageTime = useRef<number | null>(null);
-  const outOfCoverageDurations = useRef<number[]>([]);
-  // Add in-coverage tracking
-  const lastInCoverageTime = useRef<number | null>(null);
-  const inCoverageDurations = useRef<number[]>([]);
-  const isInCoverage = useRef<boolean>(false);
-
-  useEffect(() => {
-    // Reset all tracking refs/arrays when simulation starts
-    if (simulationTime === 0) {
-      handshakeRefs.current = satelliteData.map(sat => ({
-        id: sat.OBJECT_NAME,
-        isCoveredLast: false,
-        lastHandshakeStart: 0,
-        handshakeDurations: [] as number[],
-        handshakeCount: 0,
-      }));
-      lastOutOfCoverageTime.current = null;
-      outOfCoverageDurations.current = [];
-      lastInCoverageTime.current = null;
-      inCoverageDurations.current = [];
-      isInCoverage.current = false;
-    }
-    if (!isRunning) return;
-
-    // Calculate beacon position
-    const beaconAltitude = orbitConfig.altitude;
+// Compute coveringIridiums for each beacon individually
+function getCoveringIridiumsByBeacon(simulationTime: number, beaconConfigs: any[], satelliteData: any[], globalTimeScale: number) {
+  // Ensure simulationTime doesn't exceed 24 hours
+  const clampedTime = Math.min(simulationTime, 86400);
+  let perBeaconCovering: { [beaconId: string]: string[] } = {};
+  beaconConfigs.forEach(beaconConfig => {
+    const beaconId = beaconConfig.id;
+    perBeaconCovering[beaconId] = [];
+    // Calculate beacon position using global timeScale
+    const beaconAltitude = beaconConfig.altitude;
     const orbitRadius = EARTH_RADIUS + beaconAltitude;
     const MU = 398600.4418;
     const periodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius, 3) / MU);
     const angularSpeed = (2 * Math.PI) / periodSeconds;
-    const t = angularSpeed * simulationTime;
+    const t = angularSpeed * clampedTime;
     const x = Math.cos(t) * (orbitRadius / SCALE);
     const z = Math.sin(t) * (orbitRadius / SCALE);
     const beaconPos = new THREE.Vector3(x, 0, z);
 
-    // Coverage check
-    let coveredBy: string[] = [];
-    satelliteData.forEach((sat, idx) => {
-      // Satellite position at simulationTime
+    satelliteData.forEach((sat) => {
+      // Satellite position at simulationTime (global)
       const satOrbitRadius = (EARTH_RADIUS + sat.altitude) / SCALE;
       const periodSeconds = sat.period * 3600;
       const speed = (2 * Math.PI) / (periodSeconds);
@@ -379,7 +317,7 @@ export default function Earth({
       const epochDate = new Date(sat.EPOCH);
       const timeSinceEpoch = (now.getTime() - epochDate.getTime()) / 1000;
       const phaseOffset = (timeSinceEpoch / periodSeconds) * 2 * Math.PI;
-      const phase = speed * simulationTime + meanAnomalyRad + phaseOffset;
+      const phase = speed * clampedTime + meanAnomalyRad + phaseOffset;
       const sx = Math.cos(phase) * satOrbitRadius;
       const sz = Math.sin(phase) * satOrbitRadius;
       const sy = 0;
@@ -390,107 +328,251 @@ export default function Earth({
         .multiply(new THREE.Matrix4().makeRotationY(argPericenterRad));
       satPos.applyMatrix4(m);
       if (isBeaconInCone(beaconPos, satPos, sat.altitude)) {
-        coveredBy.push(sat.OBJECT_NAME);
+        perBeaconCovering[beaconId].push(sat.OBJECT_NAME);
       }
     });
-    setCoveringIridiums(coveredBy);
+  });
+  return perBeaconCovering;
+}
 
-    // Track in/out of coverage based on whether ANY satellite is covering
-    const isNowInCoverage = coveredBy.length > 0;
+function deepEqual(a: any, b: any): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
-    // Handle the final period first if we're at the end
-    if (simulationTime >= 86400 || !isRunning) {
-      if (isInCoverage.current && lastInCoverageTime.current !== null) {
-        const finalPeriod = simulationTime - lastInCoverageTime.current;
-        inCoverageDurations.current.push(finalPeriod);
-        console.log(`Final in-coverage period: ${finalPeriod.toFixed(2)}s`);
-        lastInCoverageTime.current = null;
-      } else if (!isInCoverage.current && lastOutOfCoverageTime.current !== null) {
-        const finalPeriod = simulationTime - lastOutOfCoverageTime.current;
-        outOfCoverageDurations.current.push(finalPeriod);
-        console.log(`Final out-of-coverage period: ${finalPeriod.toFixed(2)}s`);
-        lastOutOfCoverageTime.current = null;
-      }
-      isInCoverage.current = false;
-    } else {
-      // Normal coverage tracking
-      if (isNowInCoverage && !isInCoverage.current) {
-        // Just entered coverage
-        if (lastOutOfCoverageTime.current !== null) {
-          const outPeriod = simulationTime - lastOutOfCoverageTime.current;
-          outOfCoverageDurations.current.push(outPeriod);
-          console.log(`Out-of-coverage period: ${outPeriod.toFixed(2)}s`);
-          lastOutOfCoverageTime.current = null;
-        }
-        lastInCoverageTime.current = simulationTime;
-        isInCoverage.current = true;
-      } else if (!isNowInCoverage && isInCoverage.current) {
-        // Just left coverage
-        if (lastInCoverageTime.current !== null) {
-          const inPeriod = simulationTime - lastInCoverageTime.current;
-          inCoverageDurations.current.push(inPeriod);
-          console.log(`In-coverage period: ${inPeriod.toFixed(2)}s`);
-          lastInCoverageTime.current = null;
-        }
-        lastOutOfCoverageTime.current = simulationTime;
-        isInCoverage.current = false;
-      }
-    }
+export default function Earth({ 
+  simulationTime = 0, 
+  timeScale = 48, 
+  isRunning = false, 
+  stats, 
+  setStats, 
+  coveringIridiums, 
+  setCoveringIridiums,
+  setCoveringIridiumsByBeacon,
+  beaconConfigs,
+  selectedBeaconId
+}: EarthProps) {
+  // Use a typical altitude for the ring, or the first satellite's altitude if available
+  const ringAltitude = satelliteData[0]?.altitude || 780;
+  const ringRadius = (EARTH_RADIUS + ringAltitude) / SCALE;
 
-    // Per-satellite handshake logic
-    let totalHandshakes = 0;
-    handshakeRefs.current.forEach((ref, idx) => {
-      const isNowCovered = coveredBy.includes(ref.id);
-      if (!ref.isCoveredLast && isNowCovered) {
-        // Handshake started
-        ref.handshakeCount++;
-        ref.lastHandshakeStart = simulationTime;
-      }
-      if (ref.isCoveredLast && !isNowCovered) {
-        // Handshake ended
-        const duration = simulationTime - ref.lastHandshakeStart;
-        if (ref.lastHandshakeStart > 0) ref.handshakeDurations.push(duration);
-      }
-      ref.isCoveredLast = isNowCovered;
-      totalHandshakes += ref.handshakeCount;
-    });
+  // Restore handshakeRefs for per-beacon, per-satellite handshake tracking
+  const handshakeRefs = useRef<{ [beaconId: string]: { [satId: string]: {
+    handshakeCount: number;
+    handshakeDurations: number[];
+    isCoveredLast: boolean;
+    lastHandshakeStart: number;
+  }; } }>({});
 
-    // Update stats for display
-    const totalOutOfCoverageTime = outOfCoverageDurations.current.reduce((a, b) => a + b, 0);
-    const avgOutOfCoverageTime = outOfCoverageDurations.current.length > 0 ? totalOutOfCoverageTime / outOfCoverageDurations.current.length : 0;
-    
-    // In-coverage stats
-    const totalInCoverageTime = inCoverageDurations.current.reduce((a, b) => a + b, 0);
-    const avgInCoverageTime = inCoverageDurations.current.length > 0 ? totalInCoverageTime / inCoverageDurations.current.length : 0;
+  // Add per-beacon out-of-coverage tracking
+  const beaconOutCoverageRefs = useRef<{ [beaconId: string]: {
+    outOfCoverageDurations: number[];
+    lastOutOfCoverageTime: number | null;
+    isOutOfCoverage: boolean;
+  } }>({});
 
-    // Verify total coverage time equals simulation time
-    const totalCoverageTime = totalInCoverageTime + totalOutOfCoverageTime;
-    if (Math.abs(totalCoverageTime - 86400) > 0.01) { // Allow for small floating point errors
-      console.warn(`Coverage time mismatch: ${totalCoverageTime.toFixed(2)} != 86400`);
-      console.log('In-coverage periods:', inCoverageDurations.current.map(t => t.toFixed(2)));
-      console.log('Out-of-coverage periods:', outOfCoverageDurations.current.map(t => t.toFixed(2)));
-      console.log('Current state:', {
-        isInCoverage: isInCoverage.current,
-        lastInCoverageTime: lastInCoverageTime.current,
-        lastOutOfCoverageTime: lastOutOfCoverageTime.current,
-        simulationTime
+  // Add ref for per-beacon coverage
+  const perBeaconCoveringRef = useRef<{ [beaconId: string]: string[] }>({});
+
+  // Add ref for previous stats
+  const prevStatsRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Initialize handshakeRefs for all beacons and satellites
+    if (simulationTime === 0) {
+      handshakeRefs.current = {};
+      beaconConfigs.forEach(beacon => {
+        handshakeRefs.current[beacon.id] = {};
+        satelliteData.forEach(sat => {
+          handshakeRefs.current[beacon.id][sat.OBJECT_NAME] = {
+            handshakeCount: 0,
+            handshakeDurations: [],
+            isCoveredLast: false,
+            lastHandshakeStart: 0,
+          };
+        });
       });
     }
 
-    setStats({
-      totalHandshakes,
-      totalOutOfCoverageTime,
-      avgOutOfCoverageTime,
-      totalInCoverageTime,
-      avgInCoverageTime,
-      perSatellite: handshakeRefs.current.map(ref => ({
-        id: ref.id,
-        count: ref.handshakeCount,
-        durations: ref.handshakeDurations,
-        total: ref.handshakeDurations.reduce((a, b) => a + b, 0),
-      })),
+    // For each beacon, track which satellites it covers
+    let perBeaconCovering: { [beaconId: string]: string[] } = getCoveringIridiumsByBeacon(simulationTime, beaconConfigs, satelliteData, timeScale);
+
+    // Update the ref
+    perBeaconCoveringRef.current = perBeaconCovering;
+
+    // Always update coveringIridiums based on simulationTime (for handshaking panel sync)
+    const allCovering = Array.from(new Set(Object.values(perBeaconCovering).flat()));
+    setCoveringIridiums((prev) => {
+      if (JSON.stringify(prev as string[]) !== JSON.stringify(allCovering)) {
+        return allCovering;
+      }
+      return prev as string[];
     });
-  }, [simulationTime, isRunning]);
+    // Update per-beacon coverage for the stats panel
+    setCoveringIridiumsByBeacon(perBeaconCovering);
+
+  }, [simulationTime, beaconConfigs, setCoveringIridiums, setCoveringIridiumsByBeacon, timeScale]);
+
+  // Separate effect for stats updates
+  useEffect(() => {
+    if (!isRunning) return;
+
+    // Per-beacon, per-satellite handshake tracking
+    beaconConfigs.forEach(beaconConfig => {
+      const beaconId = beaconConfig.id;
+      satelliteData.forEach(sat => {
+        const satId = sat.OBJECT_NAME;
+        const ref = handshakeRefs.current[beaconId][satId];
+        const isNowCovered = perBeaconCoveringRef.current[beaconId].includes(satId);
+        if (isNowCovered && !ref.isCoveredLast) {
+          // Handshake started
+          ref.handshakeCount++;
+          ref.lastHandshakeStart = simulationTime;
+        }
+        if (!isNowCovered && ref.isCoveredLast) {
+          // Handshake ended
+          const duration = simulationTime - ref.lastHandshakeStart;
+          if (ref.lastHandshakeStart > 0) ref.handshakeDurations.push(duration);
+        }
+        ref.isCoveredLast = isNowCovered;
+      });
+    });
+
+    // At the end of the simulation, close any open handshakes
+    if (simulationTime >= 86400 || !isRunning) {
+      beaconConfigs.forEach(beaconConfig => {
+        const beaconId = beaconConfig.id;
+        satelliteData.forEach(sat => {
+          const satId = sat.OBJECT_NAME;
+          const ref = handshakeRefs.current[beaconId][satId];
+          if (ref.isCoveredLast && ref.lastHandshakeStart > 0) {
+            const duration = Math.min(simulationTime, 86400) - ref.lastHandshakeStart;
+            ref.handshakeDurations.push(duration);
+            ref.isCoveredLast = false;
+            ref.lastHandshakeStart = 0;
+          }
+        });
+      });
+    }
+
+    // Initialize out-of-coverage refs for all beacons
+    if (simulationTime === 0) {
+      beaconOutCoverageRefs.current = {};
+      beaconConfigs.forEach(beacon => {
+        beaconOutCoverageRefs.current[beacon.id] = {
+          outOfCoverageDurations: [],
+          lastOutOfCoverageTime: 0,
+          isOutOfCoverage: true,
+        };
+      });
+    }
+
+    // For each beacon, check if it is covered by any satellite
+    beaconConfigs.forEach(beaconConfig => {
+      const beaconId = beaconConfig.id;
+      const isNowCovered = perBeaconCoveringRef.current[beaconId] && perBeaconCoveringRef.current[beaconId].length > 0;
+      const ref = beaconOutCoverageRefs.current[beaconId];
+      if (!isNowCovered && !ref.isOutOfCoverage) {
+        // Just entered out-of-coverage
+        ref.lastOutOfCoverageTime = simulationTime;
+        ref.isOutOfCoverage = true;
+      } else if (isNowCovered && ref.isOutOfCoverage) {
+        // Just left out-of-coverage
+        if (ref.lastOutOfCoverageTime !== null) {
+          const duration = simulationTime - ref.lastOutOfCoverageTime;
+          ref.outOfCoverageDurations.push(duration);
+        }
+        ref.lastOutOfCoverageTime = null;
+        ref.isOutOfCoverage = false;
+      }
+    });
+
+    // At the end of the simulation, close any open out-of-coverage periods
+    if (simulationTime >= 86400 || !isRunning) {
+      beaconConfigs.forEach(beaconConfig => {
+        const beaconId = beaconConfig.id;
+        const ref = beaconOutCoverageRefs.current[beaconId];
+        if (ref.isOutOfCoverage && ref.lastOutOfCoverageTime !== null) {
+          const duration = Math.min(simulationTime, 86400) - ref.lastOutOfCoverageTime;
+          ref.outOfCoverageDurations.push(duration);
+          ref.lastOutOfCoverageTime = null;
+        }
+      });
+    }
+
+    // Aggregate per-beacon stats for the stats panel
+    let perBeaconStats: any[] = beaconConfigs.map(beaconConfig => {
+      const beaconId = beaconConfig.id;
+      const beaconRefs = handshakeRefs.current[beaconId];
+      let allDurations: number[] = [];
+      let totalHandshakes = 0;
+      Object.values(beaconRefs).forEach(ref => {
+        allDurations = allDurations.concat(ref.handshakeDurations);
+        totalHandshakes += ref.handshakeCount;
+      });
+      
+      // Calculate total in-coverage time from handshake durations
+      const totalInCoverageTime = allDurations.reduce((a, b) => a + b, 0);
+      
+      // Out-of-coverage aggregation
+      const outRef = beaconOutCoverageRefs.current[beaconId];
+      const totalOutOfCoverageTime = outRef.outOfCoverageDurations.reduce((a, b) => a + b, 0);
+      
+      // Calculate averages based on the number of periods
+      const avgOutOfCoverageTime = outRef.outOfCoverageDurations.length > 0 
+        ? totalOutOfCoverageTime / outRef.outOfCoverageDurations.length 
+        : 0;
+      const avgInCoverageTime = allDurations.length > 0 
+        ? totalInCoverageTime / allDurations.length 
+        : 0;
+
+      // If total time exceeds 24 hours, scale both times proportionally
+      const totalTime = totalInCoverageTime + totalOutOfCoverageTime;
+      let finalInCoverageTime = totalInCoverageTime;
+      let finalOutOfCoverageTime = totalOutOfCoverageTime;
+      
+      if (totalTime > 86400) {
+        const scale = 86400 / totalTime;
+        finalInCoverageTime = totalInCoverageTime * scale;
+        finalOutOfCoverageTime = totalOutOfCoverageTime * scale;
+      }
+
+      return {
+        beaconId,
+        totalInCoverageTime: finalInCoverageTime,
+        avgInCoverageTime,
+        handshakeCount: totalHandshakes,
+        totalOutOfCoverageTime: finalOutOfCoverageTime,
+        avgOutOfCoverageTime,
+      };
+    });
+
+    // Aggregate per-satellite stats for the stats table
+    let perSatellite: any[] = [];
+    beaconConfigs.forEach(beaconConfig => {
+      const beaconId = beaconConfig.id;
+      satelliteData.forEach(sat => {
+        const satId = sat.OBJECT_NAME;
+        const ref = handshakeRefs.current[beaconId][satId];
+        const totalHandshakeTime = ref.handshakeDurations.reduce((a, b) => a + b, 0);
+        perSatellite.push({
+          beaconId,
+          satId,
+          count: ref.handshakeCount,
+          total: totalHandshakeTime,
+        });
+      });
+    });
+
+    // Update stats for display
+    const newStats = {
+      perBeacon: perBeaconStats,
+      perSatellite,
+    };
+    if (!deepEqual(newStats, prevStatsRef.current)) {
+      prevStatsRef.current = newStats;
+      setStats(newStats);
+    }
+  }, [simulationTime, isRunning, beaconConfigs, timeScale]);
 
   return (
     <div className="w-full h-full">
@@ -518,38 +600,40 @@ export default function Earth({
         <Sun />
         
         <Globe simulationTime={simulationTime} />
-        {/* Beacons */}
-        {/* <Beacon 
-          altitude={600}
-          color="red" 
-          size={SATELLITE_SIZE/SCALE} 
-          inclination={64}
-          sunSynchronous={false}
-        /> */}
+        
+        {/* Render beacons */}
+        {beaconConfigs.map(config => {
+          // LST/RAAN logic for sun-synchronous orbits
+          let raanRad = 0;
+          if (config.isSunSync && typeof config.lst === 'number') {
+            // Convert LST (hours) to radians (24h = 2π)
+            const lstRad = (config.lst * Math.PI) / 12;
+            raanRad = lstRad - Math.PI / 2;
+          }
+
+          return (
         <Beacon 
-          altitude={orbitConfig.altitude}
-          color="blue" 
+              key={config.id}
+              altitude={config.altitude}
+              color={config.color}
           size={SATELLITE_SIZE/SCALE} 
-          sunSynchronous={orbitConfig.isSunSync}
-          lst={orbitConfig.lst}
-          inclination={orbitConfig.inclination}
-          simulationTime={simulationTime}
+              sunSynchronous={config.isSunSync}
+              lst={config.lst}
+              inclination={config.inclination}
+              simulationTime={simulationTime}
           isRunning={isRunning}
           satelliteData={satelliteData}
-          timeScale={timeScale}
-          coveringIridiums={coveringIridiums}
-        />
-        {/* <Beacon 
-          altitude={600}
-          color="blue" 
-          size={SATELLITE_SIZE/SCALE} 
-          sunSynchronous={true}
-          lst={9.0} // 9:00am
-        /> */}
+              timeScale={timeScale}
+              coveringIridiums={getCoveringIridiumsByBeacon(simulationTime, beaconConfigs, satelliteData, timeScale)[config.id]}
+              raanRad={raanRad}
+            />
+          );
+        })}
+
         {/* Satellites from data */}
-        {satelliteData.map((satellite, idx) => (
+        {satelliteData.map((satellite) => (
           <Satellite 
-            key={satellite.NORAD_CAT_ID} 
+            key={satellite.OBJECT_ID}
             data={satellite}
             simulationTime={simulationTime}
           />

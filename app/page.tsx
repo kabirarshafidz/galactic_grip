@@ -1,8 +1,8 @@
 'use client'
 import Earth from "@/components/Earth";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import HandshakeStatsPanel from "@/components/HandshakeStatsPanel";
-import OrbitConfigPanel from "@/components/OrbitConfigPanel";
+import BeaconManager from "@/components/BeaconManager";
 
 // How many seconds of simulation time pass per real second
 const DEFAULT_TIME_SCALE = 10800; // 3 hours per second (3 * 60 * 60)
@@ -22,12 +22,17 @@ export default function Home() {
   const [timeScale, setTimeScale] = useState(DEFAULT_TIME_SCALE);
   const [stats, setStats] = useState(initialStats);
   const [coveringIridiums, setCoveringIridiums] = useState<string[]>([]);
-  const [orbitConfig, setOrbitConfig] = useState({
-    isSunSync: true,
-    altitude: 410,
-    lst: 12.0,
-    inclination: 64.0
-  });
+  const [coveringIridiumsByBeacon, setCoveringIridiumsByBeacon] = useState<{ [beaconId: string]: string[] }>({});
+  const [beaconConfigs, setBeaconConfigs] = useState<Array<{
+    id: string;
+    isSunSync: boolean;
+    altitude: number;
+    lst?: number;
+    inclination?: number;
+    timeScale?: number;
+    color: string;
+  }>>([]);
+  const [selectedBeaconId, setSelectedBeaconId] = useState<string | undefined>();
   const lastUpdateTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
 
@@ -68,24 +73,33 @@ export default function Home() {
   };
 
   const handleTimeChange = (newTime: number) => {
-    setSimulationTime(newTime);
+    setSimulationTime(Math.min(newTime, SIM_DURATION));
   };
 
-  const handleOrbitConfigChange = (config: {
+  const handleTimeScaleChange = (newTimeScale: number) => {
+    setTimeScale(newTimeScale);
+  };
+
+  // Memoized config change handler to prevent infinite update loop
+  const handleBeaconConfigChange = useCallback((configs: Array<{
+    id: string;
     isSunSync: boolean;
     altitude: number;
     lst?: number;
     inclination?: number;
     timeScale?: number;
-  }) => {
-    setOrbitConfig({
-      ...config,
-      lst: config.lst ?? orbitConfig.lst,
-      inclination: config.inclination ?? orbitConfig.inclination
+    color: string;
+  }>) => {
+    setBeaconConfigs(prev => {
+      if (JSON.stringify(prev) !== JSON.stringify(configs)) {
+        return configs;
+      }
+      return prev;
     });
-    if (config.timeScale !== undefined) {
-      setTimeScale(config.timeScale);
-    }
+  }, []);
+
+  const handleBeaconSelect = (beaconId: string | undefined) => {
+    setSelectedBeaconId(beaconId);
   };
 
   useEffect(() => {
@@ -97,7 +111,7 @@ export default function Home() {
       lastUpdateTime.current = now;
 
       setSimulationTime(prev => {
-        const newTime = prev + (deltaTime * timeScale);
+        const newTime = Math.min(prev + (deltaTime * timeScale), SIM_DURATION);
         if (newTime >= SIM_DURATION) {
           setIsRunning(false);
           setIsPaused(false);
@@ -131,7 +145,9 @@ export default function Home() {
         setStats={setStats} 
         coveringIridiums={coveringIridiums} 
         setCoveringIridiums={setCoveringIridiums}
-        orbitConfig={orbitConfig}
+        setCoveringIridiumsByBeacon={setCoveringIridiumsByBeacon}
+        beaconConfigs={beaconConfigs}
+        selectedBeaconId={selectedBeaconId}
       />
       <HandshakeStatsPanel
         simulationTime={simulationTime}
@@ -142,14 +158,18 @@ export default function Home() {
         onReset={handleReset}
         timeScale={timeScale}
         stats={stats}
-        coveringIridiums={coveringIridiums}
+        coveringIridiumsByBeacon={coveringIridiumsByBeacon}
         onTimeChange={handleTimeChange}
+        onTimeScaleChange={handleTimeScaleChange}
+        selectedBeaconId={selectedBeaconId}
       />
-      <OrbitConfigPanel 
-        onConfigChange={handleOrbitConfigChange} 
+      <BeaconManager 
+        beacons={beaconConfigs}
+        onConfigChange={handleBeaconConfigChange}
         currentTimeScale={timeScale}
         isRunning={isRunning}
         isPaused={isPaused}
+        onBeaconSelect={handleBeaconSelect}
       />
     </main>
   );

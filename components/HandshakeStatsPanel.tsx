@@ -10,9 +10,11 @@ export default function HandshakeStatsPanel({
   onReset,
   timeScale,
   stats,
-  coveringIridiums = [],
+  coveringIridiumsByBeacon = {},
   onHandshakePanelHeightChange,
   onTimeChange,
+  onTimeScaleChange,
+  selectedBeaconId,
 }: {
   simulationTime: number;
   isRunning: boolean;
@@ -22,9 +24,11 @@ export default function HandshakeStatsPanel({
   onReset: () => void;
   timeScale: number;
   stats: any;
-  coveringIridiums?: string[];
+  coveringIridiumsByBeacon?: { [beaconId: string]: string[] };
   onHandshakePanelHeightChange?: (height: number) => void;
   onTimeChange?: (time: number) => void;
+  onTimeScaleChange?: (timeScale: number) => void;
+  selectedBeaconId?: string;
 }) {
   const handshakePanelRef = useRef<HTMLDivElement>(null);
   const statsPanelRef = useRef<HTMLDivElement>(null);
@@ -65,6 +69,25 @@ export default function HandshakeStatsPanel({
     const s = Math.floor(t % 60);
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  // Use per-beacon stats for the selected beacon
+  const selectedBeaconStats = selectedBeaconId
+    ? stats.perBeacon?.find((b: any) => b.beaconId === selectedBeaconId)
+    : (stats.perBeacon && stats.perBeacon.length > 0 ? stats.perBeacon[0] : undefined);
+
+  const totalHandshakesForBeacon = selectedBeaconStats?.handshakeCount ?? 0;
+  const totalInCoverageTime = selectedBeaconStats?.totalInCoverageTime ?? 0;
+  const totalOutOfCoverageTime = selectedBeaconStats?.totalOutOfCoverageTime ?? 0;
+  const avgInCoverageTime = selectedBeaconStats?.avgInCoverageTime ?? 0;
+  const avgOutOfCoverageTime = selectedBeaconStats?.avgOutOfCoverageTime ?? 0;
+
+  // For the table: filter per-satellite stats for the selected beacon
+  const selectedBeaconSatelliteStats = stats.perSatellite
+    ? stats.perSatellite.filter((sat: any) => sat.beaconId === selectedBeaconId)
+    : [];
+
+  // For the handshaking panel, use the satellites for the selected beacon
+  const currentCoveringIridiums = selectedBeaconId ? (coveringIridiumsByBeacon[selectedBeaconId] || []) : [];
 
   return (
     <>
@@ -154,14 +177,43 @@ export default function HandshakeStatsPanel({
               marginTop: 8,
             }}
           />
-          <div style={{fontSize: '12px', color: '#aaa'}}>Time scale: {timeScale}x</div>
+          <div style={{marginTop: 12}}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#aaa', fontSize: '13px' }}>Time Scale</span>
+              <span style={{ color: '#fff', fontSize: '13px' }}>
+                {timeScale >= 3600 
+                  ? `${(timeScale / 3600).toFixed(1)} hours/s`
+                  : timeScale >= 60 
+                    ? `${(timeScale / 60).toFixed(1)} mins/s`
+                    : `${timeScale.toFixed(1)} secs/s`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="10800"
+              value={timeScale}
+              onChange={(e) => onTimeScaleChange?.(Number(e.target.value))}
+              style={{
+                width: '100%',
+                background: 'rgba(255,255,255,0.1)',
+                height: '4px',
+                borderRadius: '2px',
+                outline: 'none',
+                WebkitAppearance: 'none',
+                marginTop: 8,
+              }}
+            />
+          </div>
+          <h3 style={{ color: '#1e90ff', margin: '12px 0' }}>
+            {selectedBeaconId ? `Beacon ${selectedBeaconId} Stats` : 'All Beacons Stats'}
+          </h3>
         </div>
-        <h3 style={{ color: '#1e90ff', margin: '0 0 12px 0' }}>Space Handshakes Stats</h3>
-        <div style={{ color: '#ddd' }}>Total handshakes: {stats.totalHandshakes}</div>
-        <div style={{ color: '#ddd' }}>Total out-of-coverage time: {stats.totalOutOfCoverageTime.toFixed(2)} s</div>
-        <div style={{ color: '#ddd' }}>Average out-of-coverage time: {stats.avgOutOfCoverageTime.toFixed(2)} s</div>
-        <div style={{ color: '#ddd' }}>Total in-coverage time: {stats.totalInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
-        <div style={{ color: '#ddd' }}>Average in-coverage time: {stats.avgInCoverageTime?.toFixed(2) ?? '0.00'} s</div>
+        <div style={{ color: '#ddd' }}>Total handshakes: {totalHandshakesForBeacon}</div>
+        <div style={{ color: '#ddd' }}>Total out-of-coverage time: {totalOutOfCoverageTime.toFixed(2)} s</div>
+        <div style={{ color: '#ddd' }}>Average out-of-coverage time: {avgOutOfCoverageTime.toFixed(2)} s</div>
+        <div style={{ color: '#ddd' }}>Total in-coverage time: {totalInCoverageTime.toFixed(2)} s</div>
+        <div style={{ color: '#ddd' }}>Average in-coverage time: {avgInCoverageTime.toFixed(2)} s</div>
         <hr style={{margin: '8px 0', borderColor: 'rgba(255,255,255,0.1)'}} />
         <div style={{maxHeight: '200px', overflowY: 'auto'}}>
           <table style={{width: '100%', color: '#ddd'}}>
@@ -173,9 +225,9 @@ export default function HandshakeStatsPanel({
               </tr>
             </thead>
             <tbody>
-              {stats.perSatellite.map((sat: any) => (
-                <tr key={sat.id}>
-                  <td>{sat.id}</td>
+              {selectedBeaconSatelliteStats && selectedBeaconSatelliteStats.map((sat: any) => (
+                <tr key={`${sat.beaconId}-${sat.satId}`}>
+                  <td>{sat.satId}</td>
                   <td style={{ textAlign: 'right' }}>{sat.count}</td>
                   <td style={{ textAlign: 'right' }}>{sat.total.toFixed(2)}</td>
                 </tr>
@@ -187,7 +239,7 @@ export default function HandshakeStatsPanel({
 
       <div ref={handshakePanelRef} style={{
         position: 'absolute',
-        top: 20 + statsPanelHeight + 40, // Increased gap to 40px
+        top: 20 + statsPanelHeight + 40,
         right: 20,
         background: 'rgba(30,144,255,0.15)',
         backdropFilter: 'blur(8px)',
@@ -202,13 +254,13 @@ export default function HandshakeStatsPanel({
         fontWeight: 'bold',
         boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
         border: '1px solid rgba(30,144,255,0.2)',
-        transform: 'translateY(0)', // Ensure no transform is affecting position
+        transform: 'translateY(0)',
       }}>
-        Currently handshaking with:<br />
+        {selectedBeaconId ? `Beacon ${selectedBeaconId} handshaking with:` : 'Currently handshaking with:'}<br />
         <div style={{ color: '#fff', marginTop: 4 }}>
-          {coveringIridiums.length > 0 ? (
+          {currentCoveringIridiums.length > 0 ? (
             <ul style={{ paddingLeft: 18, margin: 0 }}>
-              {coveringIridiums.map((id) => (
+              {currentCoveringIridiums.map((id: string) => (
                 <li key={id} style={{ color: '#fff', fontWeight: 'normal', fontSize: 15, margin: 0, padding: 0 }}>{id}</li>
               ))}
             </ul>

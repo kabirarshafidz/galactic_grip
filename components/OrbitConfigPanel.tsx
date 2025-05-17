@@ -7,37 +7,28 @@ interface OrbitConfigPanelProps {
     altitude: number;
     lst?: number;
     inclination?: number;
-    timeScale?: number;
   }) => void;
-  currentTimeScale: number;
   isRunning: boolean;
   isPaused: boolean;
+  defaultConfig?: {
+    isSunSync: boolean;
+    altitude: number;
+    lst: number;
+    inclination: number;
+  };
 }
 
 export default function OrbitConfigPanel({ 
   onConfigChange, 
-  currentTimeScale,
   isRunning,
-  isPaused
+  isPaused,
+  defaultConfig
 }: OrbitConfigPanelProps) {
-  const [isSunSync, setIsSunSync] = useState(true);
-  const [altitude, setAltitude] = useState(410);
-  const [lst, setLst] = useState(12.0);
-  const [inclination, setInclination] = useState(64.0);
-  const [timeScale, setTimeScale] = useState(currentTimeScale);
+  const [isSunSync, setIsSunSync] = useState(defaultConfig?.isSunSync ?? true);
+  const [altitude, setAltitude] = useState(defaultConfig?.altitude ?? 20);
+  const [lst, setLst] = useState(defaultConfig?.lst ?? 12.0);
+  const [inclination, setInclination] = useState(defaultConfig?.inclination ?? 64.0);
   const isFirstMount = useRef(true);
-
-  // Convert time scale to human readable format
-  const formatTimeScale = (scale: number) => {
-    const secondsPerSecond = scale;
-    if (secondsPerSecond >= 3600) {
-      return `${(secondsPerSecond / 3600).toFixed(1)} hours/s`;
-    } else if (secondsPerSecond >= 60) {
-      return `${(secondsPerSecond / 60).toFixed(1)} mins/s`;
-    } else {
-      return `${secondsPerSecond.toFixed(1)} secs/s`;
-    }
-  };
 
   // Format LST to HH:MM format
   const formatLST = (hours: number) => {
@@ -48,25 +39,45 @@ export default function OrbitConfigPanel({
 
   const isDisabled = isRunning || isPaused;
 
-  useEffect(() => {
-    if (isFirstMount.current) {
-      isFirstMount.current = false;
-      return;
-    }
+  const handleSunSyncChange = (val: boolean) => {
+    setIsSunSync(val);
+    onConfigChange({
+      isSunSync: val,
+      altitude,
+      ...(val ? { lst } : { inclination }),
+    });
+  };
 
+  const handleAltitudeChange = (val: number) => {
+    setAltitude(val);
+    onConfigChange({
+      isSunSync,
+      altitude: val,
+      ...(isSunSync ? { lst } : { inclination }),
+    });
+  };
+
+  const handleLstChange = (val: number) => {
+    setLst(val);
     onConfigChange({
       isSunSync,
       altitude,
-      ...(isSunSync ? { lst } : { inclination }),
-      timeScale,
+      lst: val,
     });
-  }, [isSunSync, altitude, lst, inclination, timeScale]);
+  };
+
+  const handleInclinationChange = (val: number) => {
+    setInclination(val);
+    onConfigChange({
+      isSunSync,
+      altitude,
+      inclination: val,
+    });
+  };
 
   return (
     <div style={{
-      position: 'fixed',
-      top: 20,
-      left: 20,
+      position: 'relative',
       background: 'rgba(0,0,0,0.6)',
       backdropFilter: 'blur(8px)',
       color: 'white',
@@ -97,7 +108,7 @@ export default function OrbitConfigPanel({
         {/* Orbit Type Selection */}
         <div style={{ display: 'flex', gap: 8, marginTop: '12px' }}>
           <button
-            onClick={() => setIsSunSync(true)}
+            onClick={() => handleSunSyncChange(true)}
             style={{
               flex: 1,
               padding: '8px',
@@ -115,7 +126,7 @@ export default function OrbitConfigPanel({
             Sun-synchronous
           </button>
           <button
-            onClick={() => setIsSunSync(false)}
+            onClick={() => handleSunSyncChange(false)}
             style={{
               flex: 1,
               padding: '8px',
@@ -145,7 +156,7 @@ export default function OrbitConfigPanel({
             min="120"
             max="700"
             value={altitude}
-            onChange={(e) => setAltitude(Number(e.target.value))}
+            onChange={(e) => handleAltitudeChange(Number(e.target.value))}
             disabled={isDisabled}
             style={{ 
               width: '100%',
@@ -172,7 +183,7 @@ export default function OrbitConfigPanel({
               max="23.99"
               step="0.01"
               value={lst}
-              onChange={(e) => setLst(Number(e.target.value))}
+              onChange={(e) => handleLstChange(Number(e.target.value))}
               disabled={isDisabled}
               style={{ 
                 width: '100%',
@@ -200,9 +211,9 @@ export default function OrbitConfigPanel({
               onChange={(e) => {
                 const value = Number(e.target.value);
                 if (Math.abs(value - 97.5) < 0.1) {
-                  setInclination(value < 97.5 ? 97.4 : 97.6);
+                  handleInclinationChange(value < 97.5 ? 97.4 : 97.6);
                 } else {
-                  setInclination(value);
+                  handleInclinationChange(value);
                 }
               }}
               disabled={isDisabled}
@@ -218,36 +229,6 @@ export default function OrbitConfigPanel({
             />
           </div>
         )}
-      </div>
-
-      {/* Time Scale Control - Always enabled */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        gap: '4px',
-        marginTop: '12px',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
-        paddingTop: '12px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: '#aaa', fontSize: '13px' }}>Time Scale</span>
-          <span style={{ color: '#fff', fontSize: '13px' }}>{formatTimeScale(timeScale)}</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="10800" // 3 hours in seconds
-          value={timeScale}
-          onChange={(e) => setTimeScale(Number(e.target.value))}
-          style={{ 
-            width: '100%',
-            background: 'rgba(255,255,255,0.1)',
-            height: '4px',
-            borderRadius: '2px',
-            outline: 'none',
-            WebkitAppearance: 'none',
-          }}
-        />
       </div>
     </div>
   );
